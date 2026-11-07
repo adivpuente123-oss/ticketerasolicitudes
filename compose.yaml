@@ -1,0 +1,30 @@
+services:
+  portal:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      RUTA_DB: /app/db/plataforma.db
+      PORT: '8502'
+      PORTAL_CLOUD: '1'
+    volumes:
+      - tickets:/app/db
+    expose:
+      - '8502'
+  https:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    env_file: .env
+    ports:
+      - '80:80'
+      - '443:443'
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - certificados:/data
+      - caddy_config:/config
+    depends_on:
+      - portal
+volumes:
+  tickets:
+  certificados:
+  caddy_config:

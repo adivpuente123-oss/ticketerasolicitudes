@@ -1,0 +1,7 @@
+streamlit==1.66.1
+pandas==3.0.2
+numpy==2.4.4
+openpyxl==3.1.5
+plotly==7.1.0
+streamlit-autorefresh==1.0.1
+pywin32>=306; sys_platform == "win32"

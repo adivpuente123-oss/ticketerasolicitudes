@@ -1,0 +1,18 @@
+[theme]
+base = "light"
+primaryColor = "#ffd21f"
+backgroundColor = "#ffffff"
+secondaryBackgroundColor = "#f6f6f7"
+textColor = "#1b1b1f"
+
+[theme.sidebar]
+backgroundColor = "#ffffff"
+secondaryBackgroundColor = "#f6f6f7"
+textColor = "#1b1b1f"
+primaryColor = "#ffd21f"
+
+[client]
+toolbarMode = "minimal"
+
+[browser]
+gatherUsageStats = false

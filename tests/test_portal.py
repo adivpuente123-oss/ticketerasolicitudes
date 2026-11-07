@@ -1,0 +1,78 @@
+import sys
+import tempfile
+import unittest
+from pathlib import Path
+from unittest.mock import Mock
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+import db
+from correo import crear_ticket_desde_correo
+from servicio_outlook import enviar
+
+
+class PortalTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        db.RUTA_DB = Path(self.tmp.name) / "prueba.db"
+        db.iniciar()
+        self.sup = db.crear_usuario("Supervisor", "supervisor@example.com", "supervisor", "clave-prueba")
+        self.otro = db.crear_usuario("Otro", "otro@example.com", "supervisor")
+        self.admin = db.crear_usuario("Equipo", "equipo@example.com", "backoffice")
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def nuevo(self, mid="correo-1"):
+        return crear_ticket_desde_correo("supervisor@example.com", "Cancelación IBK", "Cartera: IBK\nDNI: 12345678\nCuenta: 00123456", mid)
+
+    def test_correo_crea_un_ticket_y_dos_avisos(self):
+        r = self.nuevo()
+        self.assertTrue(r["ok"])
+        self.assertEqual(r["datos"]["cuenta"], "00123456")
+        self.assertTrue(self.nuevo().get("duplicado"))
+        with db.conexion() as con:
+            self.assertEqual(con.execute("SELECT count(*) FROM tickets").fetchone()[0], 1)
+            self.assertEqual(con.execute("SELECT count(*) FROM correo_salida").fetchone()[0], 2)
+
+    def test_remitente_desconocido_o_inactivo_no_crea_ticket(self):
+        self.assertFalse(crear_ticket_desde_correo("extra@example.com", "Hola", "Consulta")["ok"])
+        db.actualizar_usuario(self.sup, "Supervisor", "supervisor@example.com", "supervisor", False)
+        self.assertFalse(self.nuevo()["ok"])
+
+    def test_respuesta_no_duplica_ticket_y_no_permite_otro_supervisor(self):
+        r = self.nuevo()
+        asunto = f"RE: [{r['codigo']}] Consulta"
+        self.assertFalse(crear_ticket_desde_correo("otro@example.com", asunto, "Ajeno", "r-0")["ok"])
+        self.assertTrue(crear_ticket_desde_correo("supervisor@example.com", asunto, "Más información", "r-1")["ok"])
+        self.assertTrue(crear_ticket_desde_correo("supervisor@example.com", asunto, "Más información", "r-1").get("duplicado"))
+        self.assertEqual(len(db.mensajes(r["tid"])), 1)
+        self.assertEqual(len(db.tickets_df()), 1)
+        self.assertEqual(len(db.tickets_df(self.otro)), 0)
+        with self.assertRaises(PermissionError):
+            db.agregar_mensaje(r["tid"], self.otro, "No autorizado")
+
+    def test_cambio_de_estado_persiste_y_encola_respuesta(self):
+        r = self.nuevo()
+        db.actualizar_ticket(r["tid"], self.admin, {"estado": "Respondida", "respuesta": "Atendida", "conclusion": "PROCEDENTE"}, "Respondida")
+        self.assertEqual(db.ticket(r["tid"])["estado"], "Respondida")
+        with db.conexion() as con:
+            mail = con.execute("SELECT * FROM correo_salida ORDER BY id DESC LIMIT 1").fetchone()
+            self.assertIn("Atendida", mail["cuerpo"])
+            self.assertEqual(mail["destinatario"], "supervisor@example.com")
+
+    def test_salida_envia_una_vez_y_no_reintenta_error_ambiguo(self):
+        self.nuevo()
+        app, cuenta = Mock(), Mock()
+        enviar(app, cuenta)
+        self.assertEqual(app.CreateItem.return_value.Send.call_count, 2)
+        enviar(app, cuenta)
+        self.assertEqual(app.CreateItem.return_value.Send.call_count, 2)
+        self.nuevo("correo-2")
+        app.CreateItem.return_value.Send.side_effect = RuntimeError("Outlook desconectado")
+        enviar(app, cuenta)
+        with db.conexion() as con:
+            self.assertEqual(con.execute("SELECT count(*) FROM correo_salida WHERE estado='revisar'").fetchone()[0], 2)
+
+
+if __name__ == "__main__":
+    unittest.main()

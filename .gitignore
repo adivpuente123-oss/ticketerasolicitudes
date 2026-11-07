@@ -1,0 +1,11 @@
+.venv/
+data/
+db/*.db
+__pycache__/
+notebooks/*.ipynb
+db/*.db-*
+.env
+.env.*
+!.env.example
+*.log
+.streamlit/secrets.toml

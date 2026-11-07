@@ -1,0 +1,11 @@
+De: jorge@empresa.com
+Asunto: Validar cancelación de cuenta
+
+Hola, necesito validar una cancelación.
+
+Cartera: IBK
+Tipo de consulta: Canceló con entidad original
+DNI: 45871236
+Cuenta: 0047318822
+
+El cliente indica que canceló el 05/10 en ventanilla.
