@@ -16,21 +16,21 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 import db
 from correo import crear_ticket_desde_correo
 from config import CARTERAS, CONCLUSIONES, CORRESPONDE, ESTADOS_TICKET, TIPOS_CONSULTA
-from estilos_plataforma import (CSS, cabecera, cabecera_tabla, esc, fila_html, kpi, logo_y, mascara, nav_item, numero)
+from estilos_plataforma import (CSS, cabecera, cabecera_tabla, esc, fila_html, kpi, logo_y, mascara, nav_item, numero, acceso_visual, banner_trabajo, ticket_resumen)
 
-st.set_page_config(page_title="Plataforma de solicitudes", page_icon="🎫", layout="wide")
-st.markdown(CSS, unsafe_allow_html=True)
+st.set_page_config(page_title="Plataforma de solicitudes", initial_sidebar_state="expanded", layout="wide")
+st.markdown("<style>" + (Path(__file__).parent / "portal.css").read_text(encoding="utf-8") + "</style>", unsafe_allow_html=True)
 db.iniciar()
 
 MES_CORTO = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "set", "oct", "nov", "dic"]
 CLASE_ESTADO = {"Recibida": "rec", "Enviada a verificar": "env", "Respondida": "res"}
-BACK = ["🏠 Inicio", "🛠 Gestionar", "➕ Nueva solicitud", "📬 Correo", "📧 Prueba de correo", "👥 Usuarios"]
-SUP = ["📋 Mis solicitudes", "➕ Nueva solicitud"]
-NAV_INFO = {"🏠 Inicio": ("solicitudes", "Solicitudes"), "🛠 Gestionar": ("gestionar", "Gestionar ticket"),
-            "➕ Nueva solicitud": ("nueva", "Nueva solicitud"), "📧 Prueba de correo": ("correo", "Prueba de correo"),
-            "👥 Usuarios": ("usuarios", "Usuarios"), "📋 Mis solicitudes": ("solicitudes", "Mis solicitudes")}
+BACK = ["Inicio", "Gestionar", "Nueva solicitud", "Correo", "Prueba de correo", "Usuarios"]
+SUP = ["Mis solicitudes", "Nueva solicitud"]
+NAV_INFO = {"Inicio": ("solicitudes", "Solicitudes"), "Gestionar": ("gestionar", "Gestionar ticket"),
+            "Nueva solicitud": ("nueva", "Nueva solicitud"), "Prueba de correo": ("correo", "Prueba de correo"),
+            "Usuarios": ("usuarios", "Usuarios"), "Mis solicitudes": ("solicitudes", "Mis solicitudes")}
 TAM_PAGINA = 20
-NAV_INFO["📬 Correo"] = ("correo", "Correo de atención")
+NAV_INFO["Correo"] = ("correo", "Correo de atención")
 FILTRO_ESTADO = ["Todos los estados", "Recibida", "En verificación", "Respondida", "Atrasadas (más de 30 días)"]
 
 
@@ -73,7 +73,7 @@ def ir_a(destino, tid):
 
 
 def abrir_en_gestionar(tid):
-    ir_a("🛠 Gestionar", tid)
+    ir_a("Gestionar", tid)
 
 
 def abrir_detalle(tid):
@@ -113,11 +113,13 @@ def metricas(items):
 
 # ---------- acceso ----------
 def pantalla_acceso():
-    st.markdown('<div style="font-size:26px;font-weight:600;margin:40px 0 24px;text-align:center">🎫 Plataforma de solicitudes</div>', unsafe_allow_html=True)
-    _, centro, _ = st.columns([1, 1.3, 1])
-    with centro:
+    visual, centro = st.columns([1.15, 1], gap="large", vertical_alignment="center")
+    with visual:
+        st.markdown(acceso_visual(), unsafe_allow_html=True)
+    with centro, st.container(key="access_form"):
+        st.markdown('<div class="access-kicker">Acceso al portal</div>', unsafe_allow_html=True)
         if not db.hay_backoffice():
-            st.subheader("Primer uso: crea al administrador")
+            st.markdown('<h2 class="access-heading">Configura tu espacio.</h2>', unsafe_allow_html=True)
             st.caption("Será el back office que gestiona todos los tickets.")
             with st.form("setup"):
                 token = st.text_input("Código de instalación del servidor", type="password") if os.getenv("SETUP_TOKEN") else ""
@@ -143,17 +145,18 @@ def pantalla_acceso():
                         except sqlite3.IntegrityError:
                             st.error("Ese nombre ya existe como usuario. Usa otro nombre.")
             return
-        st.subheader("Iniciar sesión")
+        st.markdown('<h2 class="access-heading">Bienvenido de nuevo.</h2><p class="access-copy">Ingresa con tu correo corporativo para consultar y gestionar tus solicitudes.</p>', unsafe_allow_html=True)
         with st.form("login"):
             correo = st.text_input("Correo")
             clave = st.text_input("Contraseña", type="password")
-            if st.form_submit_button("Entrar", type="primary"):
+            if st.form_submit_button("Entrar", type="primary", use_container_width=True):
                 u = db.usuario_por_correo(correo)
                 if u and u["activo"] and db.verificar_clave(clave, u["clave_hash"]):
                     st.session_state["usuario"] = {k: u[k] for k in ("id", "nombre", "correo", "rol")}
                     st.rerun()
                 time.sleep(1)  # frena los intentos repetidos
                 st.error("Correo o contraseña incorrectos, o el usuario está inactivo.")
+        st.markdown('<div class="access-note">¿Necesitas acceso? Contacta al administrador de tu equipo.<br>Tu cuenta y tus solicitudes se conservan en el portal.</div>', unsafe_allow_html=True)
 
 
 # ---------- listado de solicitudes: tarjetas de resumen, filtros y tabla ----------
@@ -213,28 +216,32 @@ def render_tabla(v, modo, al_abrir):
     paginas = max(1, -(-total // TAM_PAGINA))
     pag = min(st.session_state.get("pag_tabla", 0), paginas - 1)
     ini, fin = pag * TAM_PAGINA, min((pag + 1) * TAM_PAGINA, total)
-    with st.container(key="tabla"):
-        st.markdown(cabecera_tabla(modo), unsafe_allow_html=True)
-        if v.empty:
-            st.markdown('<div class="vacio">No hay solicitudes con estos filtros.</div>', unsafe_allow_html=True)
-        for _, t in v.iloc[ini:fin].iterrows():
-            with st.container(key=f"fila_{int(t['id'])}"):
-                st.markdown(fila_html(t, t["dias"], modo), unsafe_allow_html=True)
-                st.button("Abrir", key=f"abrir_{int(t['id'])}", on_click=al_abrir, args=(int(t["id"]),))
-    c1, c2, c3 = st.columns([6, 1, 1], vertical_alignment="center")
-    c1.markdown(f'<div class="pie-tabla">Mostrando {ini + 1 if total else 0}–{fin} de {total:,} · página {pag + 1} de {paginas}</div>', unsafe_allow_html=True)
-    c2.button("← Anterior", key="pag_ant", on_click=cambiar_pag, args=(-1,), disabled=pag == 0)
-    c3.button("Siguiente →", key="pag_sig", on_click=cambiar_pag, args=(1,), disabled=pag >= paginas - 1)
+    if v.empty:
+        st.markdown('<div class="vacio">No hay solicitudes con estos filtros.<br>Prueba con otro estado o una búsqueda diferente.</div>', unsafe_allow_html=True)
+    for _, t in v.iloc[ini:fin].iterrows():
+        with st.container(key=f"ticket_card_{int(t['id'])}"):
+            datos, accion = st.columns([5, 1.2], vertical_alignment="center")
+            with datos:
+                st.markdown(ticket_resumen(t, t["dias"], modo), unsafe_allow_html=True)
+            with accion:
+                if st.button("Abrir", key=f"abrir_{int(t['id'])}", use_container_width=True):
+                    al_abrir(int(t["id"]))
+                    st.rerun(scope="app")
+    c1, c2, c3 = st.columns([4, 1.3, 1.3], vertical_alignment="center")
+    c1.markdown(f'<div class="pie-tabla">{ini + 1 if total else 0}–{fin} de {total:,} solicitudes · página {pag + 1} de {paginas}</div>', unsafe_allow_html=True)
+    c2.button("Anterior", key="pag_ant", on_click=cambiar_pag, args=(-1,), disabled=pag == 0, use_container_width=True)
+    c3.button("Siguiente", key="pag_sig", on_click=cambiar_pag, args=(1,), disabled=pag >= paginas - 1, use_container_width=True)
 
 
 def barra_filtros(prefijo):
-    f1, f2, f3, f4 = st.columns([3, 1.6, 1.2, 1.6])
-    buscar = f1.text_input("Buscar", placeholder="Buscar por asunto, cuenta, documento, supervisor o ID", label_visibility="collapsed",
+    f1 = st.container()
+    f2, f3, f4 = st.columns([1.1, 1, 1.2])
+    buscar = f1.text_input("Buscar", placeholder="Código, cuenta o supervisor", label_visibility="visible",
                            key=f"{prefijo}_q", on_change=reiniciar_pag)
-    estado = f2.selectbox("Estado", FILTRO_ESTADO, label_visibility="collapsed", key=f"{prefijo}_estado", on_change=reiniciar_pag)
-    cartera = f3.selectbox("Cartera", ["Todas"] + CARTERAS, label_visibility="collapsed", key=f"{prefijo}_cartera",
+    estado = f2.selectbox("Estado", FILTRO_ESTADO, label_visibility="visible", key=f"{prefijo}_estado", on_change=reiniciar_pag)
+    cartera = f3.selectbox("Cartera", ["Todas"] + CARTERAS, label_visibility="visible", key=f"{prefijo}_cartera",
                            format_func=lambda x: "Todas las carteras" if x == "Todas" else x, on_change=reiniciar_pag)
-    orden = f4.selectbox("Orden", ["Más antiguas primero", "Más recientes primero"], label_visibility="collapsed",
+    orden = f4.selectbox("Orden", ["Más antiguas primero", "Más recientes primero"], label_visibility="visible",
                          key=f"{prefijo}_orden", on_change=reiniciar_pag)
     return buscar, estado, cartera, orden
 
@@ -243,7 +250,8 @@ def barra_filtros(prefijo):
 def pagina_inicio(u):
     if not acceso_vigente(u):
         return
-    st.caption("● Actualización automática cada 5 segundos")
+    st.markdown(banner_trabajo(), unsafe_allow_html=True)
+    st.caption("Actualización automática cada 5 segundos")
     df = db.tickets_df()
     if df.empty:
         st.info("No hay solicitudes todavía. Importa tu Excel con `python src/importar_excel.py` o crea una en «Nueva solicitud».")
@@ -256,7 +264,7 @@ def pagina_inicio(u):
         a, b, c = st.columns([7, 1.4, 2.3], vertical_alignment="center")
         a.markdown('<h1 class="h1">Solicitudes</h1>', unsafe_allow_html=True)
         b.download_button("Exportar", exportar(v), "solicitudes.csv", "text/csv", key="exp_bo")
-        c.button("＋ Nueva solicitud", type="primary", key="btn_nueva", on_click=cambiar_pagina, args=("➕ Nueva solicitud",))
+        c.button("Nueva solicitud", type="primary", key="btn_nueva", on_click=cambiar_pagina, args=("Nueva solicitud",))
     render_tabla(v, "bo", abrir_en_gestionar)
 
 
@@ -286,7 +294,7 @@ def detalle_supervisor(u, tid):
 def pagina_mis_solicitudes(u):
     if not acceso_vigente(u):
         return
-    st.caption("● Estado actualizado automáticamente cada 5 segundos")
+    st.caption("Estado actualizado automáticamente cada 5 segundos")
     if st.session_state.get("ver_ticket"):
         detalle_supervisor(u, st.session_state["ver_ticket"])
         return
@@ -294,16 +302,16 @@ def pagina_mis_solicitudes(u):
     if df.empty:
         titulo_pagina("Mis solicitudes")
         st.info("Todavía no tienes solicitudes. Crea la primera con el botón «Nueva solicitud».")
-        st.button("＋ Nueva solicitud", type="primary", key="btn_nueva", on_click=cambiar_pagina, args=("➕ Nueva solicitud",))
+        st.button("Nueva solicitud", type="primary", key="btn_nueva", on_click=cambiar_pagina, args=("Nueva solicitud",))
         return
     df["dias"] = dias_abierto(df)
     a, c = st.columns([8, 2.3], vertical_alignment="center")
     a.markdown('<h1 class="h1">Mis solicitudes</h1>', unsafe_allow_html=True)
-    c.button("＋ Nueva solicitud", type="primary", key="btn_nueva", on_click=cambiar_pagina, args=("➕ Nueva solicitud",))
+    c.button("Nueva solicitud", type="primary", key="btn_nueva", on_click=cambiar_pagina, args=("Nueva solicitud",))
     st.markdown(kpis_html(df, ("Mis solicitudes", "Recibidas", "En verificación", "Respondidas")), unsafe_allow_html=True)
     v = filtrar(df, *barra_filtros("sup"))
     render_tabla(v, "sup", abrir_detalle)
-    st.caption("Haz clic en una fila para ver la respuesta completa de la entidad.")
+    st.caption("Abre una solicitud para consultar su detalle y conversar con el equipo de atención.")
 
 
 def pagina_nueva(u):
@@ -502,7 +510,7 @@ def pagina_correo(u):
             f'Documento: <b>{esc(d["documento"] or "—")}</b> · Cuenta: <b>{esc(d["cuenta"] or "—")}</b></p>'
             + (f'<p class="rp" style="color:#8a6410">Faltó detectar: {esc(", ".join(d["faltantes"]))}. Complétalo al gestionar el ticket.</p>'
                if d["faltantes"] else '<p class="rp" style="color:#23724a">Se detectaron todos los datos.</p>') + "</div>", unsafe_allow_html=True)
-        st.button("Abrir ticket", on_click=ir_a, args=("🛠 Gestionar", r["tid"]))
+        st.button("Abrir ticket", on_click=ir_a, args=("Gestionar", r["tid"]))
 
 
 def pagina_usuarios(u):
@@ -514,7 +522,7 @@ def pagina_usuarios(u):
     st.dataframe(mostrar.rename(columns={"nombre": "Nombre", "correo": "Correo", "rol": "Rol", "activo": "Activo",
                                          "con_clave": "Puede entrar", "tickets": "Tickets"}).drop(columns="id"),
                  hide_index=True, width="stretch")
-    nuevo = "➕ Nuevo usuario"
+    nuevo = "Nuevo usuario"
     elegido = st.selectbox("Editar", [nuevo] + df["nombre"].tolist())
     fila = None if elegido == nuevo else df[df["nombre"] == elegido].iloc[0]
     with st.form(f"usuario_{elegido}"):
@@ -560,17 +568,19 @@ if st.session_state.get("pagina_pf") not in paginas:
     st.session_state["pagina_pf"] = paginas[0]
 pagina = st.session_state["pagina_pf"]
 
-with st.sidebar:                                      # barra angosta: solo íconos, el nombre aparece al pasar el mouse
+with st.sidebar:
     st.markdown(logo_y(), unsafe_allow_html=True)
+    st.markdown('<div class="sidebar-label">ESPACIO DE TRABAJO</div>', unsafe_allow_html=True)
+    iconos = {"solicitudes":"view_list", "gestionar":"tune", "nueva":"add_circle", "correo":"mail", "usuarios":"group"}
     for i, p in enumerate(paginas):
         icono, titulo = NAV_INFO[p]
-        with st.container(key=f"nav_{i}"):
-            st.markdown(nav_item(icono, titulo, p == pagina), unsafe_allow_html=True)
-            st.button("Ir", key=f"navb_{i}", on_click=cambiar_pagina, args=(p,))
-    with st.container(key="nav_salir"):
-        st.markdown(nav_item("salir", "Cerrar sesión"), unsafe_allow_html=True)
-        st.button("Salir", key="navb_salir", on_click=cerrar_sesion)
+        st.button(titulo, key=f"navb_{i}", icon=f":material/{iconos[icono]}:",
+                  type="primary" if p == pagina else "secondary", use_container_width=True,
+                  on_click=cambiar_pagina, args=(p,))
+    st.divider()
+    st.markdown(f'<div class="sidebar-profile">{esc(usuario["nombre"].title())}<small>{"Equipo de atención" if usuario["rol"] == "backoffice" else "Supervisor"}</small></div>', unsafe_allow_html=True)
+    st.button("Cerrar sesión", key="navb_salir", icon=":material/logout:", use_container_width=True, on_click=cerrar_sesion)
 
-st.markdown(cabecera(NAV_INFO[pagina][1], usuario["nombre"], "Back office" if usuario["rol"] == "backoffice" else "Supervisor"), unsafe_allow_html=True)
-{"📋 Mis solicitudes": pagina_mis_solicitudes, "➕ Nueva solicitud": pagina_nueva, "🏠 Inicio": pagina_inicio,
- "🛠 Gestionar": pagina_gestionar, "📬 Correo": pagina_buzon, "📧 Prueba de correo": pagina_correo, "👥 Usuarios": pagina_usuarios}[pagina](usuario)
+st.markdown(cabecera(NAV_INFO[pagina][1], usuario["nombre"], "Equipo de atención" if usuario["rol"] == "backoffice" else "Supervisor"), unsafe_allow_html=True)
+{"Mis solicitudes": pagina_mis_solicitudes, "Nueva solicitud": pagina_nueva, "Inicio": pagina_inicio,
+ "Gestionar": pagina_gestionar, "Correo": pagina_buzon, "Prueba de correo": pagina_correo, "Usuarios": pagina_usuarios}[pagina](usuario)

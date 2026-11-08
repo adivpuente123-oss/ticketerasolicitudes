@@ -44,7 +44,7 @@ class UITests(unittest.TestCase):
         self.assertFalse(any("Consulta ajena" in x.value for x in at.markdown))
 
     def test_gestion_y_buzon_cargan(self):
-        for pagina in ["🏠 Inicio", "🛠 Gestionar", "📬 Correo", "➕ Nueva solicitud", "👥 Usuarios"]:
+        for pagina in ["Inicio", "Gestionar", "Correo", "Nueva solicitud", "Usuarios"]:
             with self.subTest(pagina=pagina):
                 at = self.app(self.admin, pagina)
                 self.assertEqual(len(at.exception), 0)

@@ -86,3 +86,7 @@ python -m compileall -q app src servidor.py
 ```
 
 Las pruebas usan datos ficticios y adaptadores simulados. No sustituyen la prueba de entrega real con un buzón autorizado. Docker/HTTPS requieren validación en el servidor elegido.
+
+## Interfaz corporativa
+El portal incluye acceso con fotografía arquitectónica propia, navegación con etiquetas e iconos vectoriales, tarjetas adaptables, estados legibles y controles visibles. El tema se define en app/portal.css y .streamlit/config.toml. Los recursos visuales se guardan en app/assets; no dependen de páginas externas.
+
