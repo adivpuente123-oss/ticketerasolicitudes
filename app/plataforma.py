@@ -16,7 +16,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 import db
 from correo import crear_ticket_desde_correo
 from config import CARTERAS, CONCLUSIONES, CORRESPONDE, ESTADOS_TICKET, TIPOS_CONSULTA
-from estilos_plataforma import (CSS, cabecera, cabecera_tabla, esc, fila_html, kpi, logo_y, mascara, nav_item, numero, acceso_visual, banner_trabajo, ticket_resumen)
+from estilos_plataforma import (CSS, cabecera, cabecera_tabla, esc, fila_html, kpi, logo_y, mascara, nav_item, numero, acceso_visual, fondo_acceso, banner_trabajo, ticket_resumen)
 
 st.set_page_config(page_title="Plataforma de solicitudes", initial_sidebar_state="expanded", layout="wide")
 st.markdown("<style>" + (Path(__file__).parent / "portal.css").read_text(encoding="utf-8") + "</style>", unsafe_allow_html=True)
@@ -113,6 +113,7 @@ def metricas(items):
 
 # ---------- acceso ----------
 def pantalla_acceso():
+    st.markdown(fondo_acceso(), unsafe_allow_html=True)
     visual, centro = st.columns([1.15, 1], gap="large", vertical_alignment="center")
     with visual:
         st.markdown(acceso_visual(), unsafe_allow_html=True)

@@ -93,11 +93,26 @@ def foto_uri():
 
 
 def acceso_visual():
-    fondo = f"background-image:linear-gradient(180deg,rgba(9,25,48,.18),rgba(9,25,48,.93)),url('{foto_uri()}')"
-    return (f'<section class="access-art" style="{fondo}">' + logo_y()
-            + '<div><div class="eyebrow">Gestión de solicitudes</div><h1>Cada solicitud.<br>Un paso adelante.</h1>'
-              '<p>Coordina la atención de tu equipo con información clara, seguimiento continuo y todas las respuestas en un solo lugar.</p></div>'
+    return ('<section class="access-art">' + logo_y()
+            + '<div class="access-editorial"><div class="eyebrow">Gestión de solicitudes</div><h1>Cada solicitud.<br>Un paso adelante.</h1>'
+              '<p>La atención de tu equipo, conectada en un solo lugar.</p></div>'
               '<div class="access-foot">Un espacio de trabajo para supervisores y equipo de atención.</div></section>')
+
+
+def fondo_acceso():
+    """Only rendered outside a signed-in session; dashboard keeps its own theme."""
+    return ("<style>.stApp{background-color:#10233f;"
+            "background-image:linear-gradient(90deg,rgba(7,20,40,.82),rgba(9,25,48,.42)),url('" + foto_uri() + "');"
+            "background-size:cover;background-position:center 48%;background-attachment:fixed}"
+            '[data-testid="stHeader"]{background:transparent}'
+            '.block-container{max-width:1380px;min-height:100svh;padding-top:3.5rem;padding-bottom:3.5rem}'
+            '.access-art{background:none;border-radius:0;box-shadow:none;padding:20px 24px 20px 0;min-height:660px}'
+            '.st-key-access_form{max-width:460px;margin-left:auto;box-shadow:0 25px 80px #04112645;padding:36px}'
+            '@media(max-width:767px){.block-container{padding-top:2rem;padding-bottom:2rem}'
+            '.access-art{padding:0;min-height:70px;justify-content:center}'
+            '.access-editorial,.access-art .access-foot{display:none}'
+            '.access-art .brand{justify-content:center}.st-key-access_form{margin:0 auto;padding:28px}}'
+            '</style>')
 
 
 def banner_trabajo():
