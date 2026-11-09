@@ -85,5 +85,31 @@ class PortalTests(unittest.TestCase):
             self.assertEqual(con.execute("SELECT count(*) FROM correo_salida WHERE estado='revisar'").fetchone()[0], 2)
 
 
+    def test_edita_correo_y_clave_sin_cambiar_id(self):
+        db.actualizar_usuario(self.sup, "Renombrado", "NUEVO@example.com", "supervisor", True, "nueva-clave")
+        self.assertIsNone(db.usuario_por_correo("supervisor@example.com"))
+        u = db.usuario_por_correo("nuevo@example.com")
+        self.assertEqual(u["id"], self.sup)
+        self.assertTrue(db.verificar_clave("nueva-clave", u["clave_hash"]))
+        self.assertFalse(db.verificar_clave("clave-prueba", u["clave_hash"]))
+        db.actualizar_usuario(self.sup, "Renombrado", "nuevo@example.com", "supervisor", True)
+        self.assertTrue(db.verificar_clave("nueva-clave", db.usuario_por_id(self.sup)["clave_hash"]))
+
+    def test_elimina_cuenta_sin_registros(self):
+        db.eliminar_usuario(self.otro, self.admin)
+        self.assertIsNone(db.usuario_por_id(self.otro))
+
+    def test_eliminar_protege_historial_y_acceso(self):
+        self.nuevo()
+        with self.assertRaises(ValueError):
+            db.eliminar_usuario(self.sup, self.admin)
+        with self.assertRaises(ValueError):
+            db.eliminar_usuario(self.admin, self.admin)
+        with self.assertRaises(PermissionError):
+            db.eliminar_usuario(self.otro, self.sup)
+        self.assertIsNotNone(db.usuario_por_id(self.sup))
+        self.assertEqual(len(db.tickets_df(self.sup)), 1)
+
+
 if __name__ == "__main__":
     unittest.main()

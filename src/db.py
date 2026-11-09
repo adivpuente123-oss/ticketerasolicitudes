@@ -139,6 +139,24 @@ def actualizar_usuario(uid, nombre, correo, rol, activo, clave=None):
             con.execute("UPDATE usuarios SET clave_hash=? WHERE id=?", (hash_clave(clave), uid))
 
 
+
+def eliminar_usuario(uid, actor_id):
+    """Elimina cuentas sin registros asociados; solo para back office activo."""
+    with conexion() as con:
+        con.execute("BEGIN IMMEDIATE")
+        actor = con.execute("SELECT * FROM usuarios WHERE id=?", (actor_id,)).fetchone()
+        if not actor or not actor["activo"] or actor["rol"] != "backoffice":
+            raise PermissionError("Solo back office puede eliminar usuarios.")
+        if uid == actor_id:
+            raise ValueError("No puedes eliminar tu propia cuenta.")
+        if not con.execute("SELECT 1 FROM usuarios WHERE id=?", (uid,)).fetchone():
+            raise ValueError("El usuario ya no existe.")
+        for tabla, campo in (("tickets", "supervisor_id"), ("historial", "usuario_id"), ("mensajes", "usuario_id")):
+            if con.execute(f"SELECT 1 FROM {tabla} WHERE {campo}=? LIMIT 1", (uid,)).fetchone():
+                raise ValueError("Este usuario tiene solicitudes, mensajes o historial. Desmarca Activo y guarda para desactivarlo sin perder sus registros.")
+        con.execute("DELETE FROM usuarios WHERE id=?", (uid,))
+
+
 def usuario_por_correo(correo):
     with conexion() as con:
         return con.execute("SELECT * FROM usuarios WHERE correo = ?", ((correo or "").strip().lower(),)).fetchone()

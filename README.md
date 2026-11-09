@@ -98,3 +98,9 @@ Las pruebas usan datos ficticios y adaptadores simulados. No sustituyen la prueb
 ## Interfaz corporativa
 El portal incluye acceso con fotografía arquitectónica propia, navegación con etiquetas e iconos vectoriales, tarjetas adaptables, estados legibles y controles visibles. El tema se define en app/portal.css y .streamlit/config.toml. Los recursos visuales se guardan en app/assets; no dependen de páginas externas.
 
+
+## Gestión de usuarios
+
+En Usuarios, selecciona una cuenta en «Crear o editar usuario» para modificar nombre, correo, rol o estado. Para cambiar su contraseña, escribe la nueva (mínimo 8 caracteres) y repítela; deja ambos campos vacíos para conservarla. Pulsa Guardar usuario.
+
+Back office puede eliminar cuentas sin solicitudes, mensajes ni historial mediante Eliminar usuario y su confirmación. Las cuentas con registros se desactivan desmarcando Activo y guardando: así se conserva el historial y se impide su acceso. No puedes eliminar tu propia cuenta.
