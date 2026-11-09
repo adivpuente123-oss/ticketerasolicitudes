@@ -33,8 +33,11 @@ class GraphTests(unittest.TestCase):
         with patch.object(self.g, "request", return_value={}) as req:
             self.g.enviar()
             self.assertEqual(req.call_count, 2)
+            for llamada in req.call_args_list:
+                self.assertTrue(llamada.args[0].endswith("/messages"))
+                self.assertEqual(llamada.args[1], "POST")
         with db.conexion() as con:
-            self.assertEqual(con.execute("SELECT count(*) FROM correo_salida WHERE estado='aceptado_microsoft'").fetchone()[0], 2)
+            self.assertEqual(con.execute("SELECT count(*) FROM correo_salida WHERE estado='borrador'").fetchone()[0], 2)
 
     def test_no_reenvia_automaticamente_timeout_ambiguo(self):
         db.crear_ticket(self.sup, "IBK", "Consulta", "12345678", "00123456")

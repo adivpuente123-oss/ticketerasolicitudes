@@ -178,7 +178,7 @@ def crear_ticket(supervisor_id, cartera, tipo_consulta, documento, cuenta, descr
         con.execute("UPDATE tickets SET codigo = ? WHERE id = ?", (codigo, tid))
         con.execute("INSERT INTO historial (ticket_id, fecha, usuario_id, evento, detalle) VALUES (?,?,?,?,?)",
                     (tid, ahora_iso(), usuario_id, "Creado", detalle))
-        _notificar(con, tid, "Solicitud recibida", f"Tu solicitud está registrada.\nCartera: {cartera}\nTipo: {tipo_consulta}\n\n{descripcion}", avisar_equipo=True)
+        _notificar(con, tid, "Solicitud recibida", f"Tu solicitud {codigo} fue recibida. La revisaremos pronto.", avisar_equipo=True)
     return tid, codigo
 
 
@@ -228,8 +228,10 @@ def _notificar(con, tid, asunto, texto, avisar_equipo=False):
     if avisar_equipo:
         destinatarios.add(os.getenv("BUZON_ATENCION", "adiv.puente@goexpertis.com"))
     cuerpo = f"{t['codigo']} · {t['estado']}\n\n{texto}\n\nResponde conservando [{t['codigo']}] en el asunto para continuar la conversación."
+    if asunto == "Solicitud recibida":
+        cuerpo = texto
     url = os.getenv("PORTAL_URL", "").strip()
-    if url:
+    if url and asunto != "Solicitud recibida":
         cuerpo += f"\nConsulta tus solicitudes en {url}"
     for correo in destinatarios:
         con.execute("INSERT INTO correo_salida(ticket_id,destinatario,asunto,cuerpo) VALUES(?,?,?,?)",
