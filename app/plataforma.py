@@ -515,6 +515,11 @@ def pagina_correo(u):
 
 
 def pagina_usuarios(u):
+    if not acceso_vigente(u):
+        return
+    if u["rol"] != "backoffice":
+        st.error("Solo back office puede gestionar usuarios.")
+        return
     titulo_pagina("Usuarios", "Los supervisores importados del Excel no tienen correo ni contraseña: asígnalos aquí para que puedan entrar.")
     df = db.usuarios_df()
     st.caption("ENTIDAD, CLIENTE y ASESORIA no son personas y quedaron inactivos.")
@@ -524,7 +529,8 @@ def pagina_usuarios(u):
                                          "con_clave": "Puede entrar", "tickets": "Tickets"}).drop(columns="id"),
                  hide_index=True, width="stretch")
     nuevo = "Nuevo usuario"
-    elegido = st.selectbox("Editar", [nuevo] + df["nombre"].tolist())
+    elegido = st.selectbox("Crear o editar usuario", [nuevo] + df["nombre"].tolist())
+    st.caption("Selecciona un usuario para cambiar su correo o contraseña. Deja la contraseña vacía para conservar la actual.")
     fila = None if elegido == nuevo else df[df["nombre"] == elegido].iloc[0]
     with st.form(f"usuario_{elegido}"):
         c1, c2 = st.columns(2)
@@ -533,6 +539,7 @@ def pagina_usuarios(u):
         rol = c1.selectbox("Rol", ["supervisor", "backoffice"], index=0 if fila is None or fila["rol"] == "supervisor" else 1)
         activo = c2.checkbox("Activo", value=True if fila is None else bool(fila["activo"]))
         clave = st.text_input("Contraseña nueva (déjala vacía para no cambiarla)", type="password")
+        clave2 = st.text_input("Repite la contraseña nueva", type="password")
         if st.form_submit_button("Guardar usuario", type="primary"):
             if not nombre.strip():
                 st.error("El nombre es obligatorio.")
@@ -540,6 +547,8 @@ def pagina_usuarios(u):
                 st.error("El correo no es válido.")
             elif clave and len(clave) < 8:
                 st.error("La contraseña debe tener al menos 8 caracteres.")
+            elif clave != clave2:
+                st.error("Las contraseñas no coinciden.")
             elif fila is not None and int(fila["id"]) == u["id"] and (rol != "backoffice" or not activo):
                 st.error("No puedes quitarte tu propio acceso de back office.")
             else:
@@ -548,10 +557,32 @@ def pagina_usuarios(u):
                         db.crear_usuario(nombre, correo, rol, clave or None, int(activo))
                     else:
                         db.actualizar_usuario(int(fila["id"]), nombre, correo, rol, activo, clave or None)
+                    if fila is not None and int(fila["id"]) == u["id"]:
+                        st.session_state["usuario"] = {"id": u["id"], "nombre": nombre.strip().upper(), "correo": correo.strip().lower(), "rol": rol}
                     st.toast("Usuario guardado")
                     st.rerun()
                 except sqlite3.IntegrityError:
                     st.error("Ya existe un usuario con ese nombre o correo.")
+
+
+    if fila is not None:
+        st.subheader("Eliminar usuario")
+        if int(fila["id"]) == u["id"]:
+            st.info("No puedes eliminar tu propia cuenta.")
+        else:
+            st.caption("Solo se pueden eliminar cuentas sin solicitudes, mensajes ni historial. Si tiene registros, desmarca Activo y guarda los cambios para desactivarla.")
+            with st.form(f"eliminar_usuario_{int(fila['id'])}"):
+                confirmado = st.checkbox(f"Confirmo eliminar a {fila['nombre']}")
+                if st.form_submit_button("Eliminar usuario"):
+                    if not confirmado:
+                        st.error("Marca la confirmación para eliminar este usuario.")
+                    else:
+                        try:
+                            db.eliminar_usuario(int(fila["id"]), u["id"])
+                            st.toast("Usuario eliminado")
+                            st.rerun()
+                        except (ValueError, PermissionError) as exc:
+                            st.error(str(exc))
 
 
 # ---------- aplicación ----------
