@@ -134,3 +134,14 @@ class UITests(unittest.TestCase):
         self.assertEqual(db.notificaciones_usuario(self.admin), [])
         self.assertFalse(any(str(b.key).startswith('aviso_') for b in at.button))
         self.assertEqual(len(at.exception), 0)
+
+    def test_panel_compacto_filtros_y_contadores(self):
+        db.actualizar_ticket(self.tid, self.admin, {"estado": "Respondida", "conclusion": "PROCEDENTE"}, "Respondida")
+        at = self.app(self.admin, 'Inicio')
+        self.assertEqual(len(at.exception), 0)
+        self.assertTrue(any('summary-grid' in m.value and 'Aprobadas' in m.value for m in at.markdown))
+        at.text_input(key='bo_q').set_value('Consulta propia').run()
+        self.assertEqual(len([b for b in at.button if str(b.key).startswith('abrir_')]), 1)
+        at.selectbox(key='bo_estado').select('Recibida').run()
+        self.assertEqual(len([b for b in at.button if str(b.key).startswith('abrir_')]), 0)
+        self.assertEqual(len(at.exception), 0)
