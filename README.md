@@ -103,4 +103,6 @@ El portal incluye acceso con fotografía arquitectónica propia, navegación con
 
 En Usuarios, selecciona una cuenta en «Crear o editar usuario» para modificar nombre, correo, rol o estado. Para cambiar su contraseña, escribe la nueva (mínimo 8 caracteres) y repítela; deja ambos campos vacíos para conservarla. Pulsa Guardar usuario.
 
-Back office puede eliminar cuentas sin solicitudes, mensajes ni historial mediante Eliminar usuario y su confirmación. Las cuentas con registros se desactivan desmarcando Activo y guardando: así se conserva el historial y se impide su acceso. No puedes eliminar tu propia cuenta.
+Back office puede borrar solicitudes desde el botón Borrar de cada solicitud en el listado y confirmar en el listado. Se eliminan también sus mensajes, historial y avisos de correo de la plataforma.
+
+Al eliminar un usuario, elige si deseas borrar también todas sus solicitudes. Con Sí y la confirmación se borran la cuenta, sus solicitudes y sus registros asociados en una sola operación. Con No, se elimina la cuenta y se conservan las solicitudes sin usuario asociado. No puedes eliminar tu propia cuenta. Los correos y borradores que ya existen en Outlook no se eliminan; se conserva únicamente una huella del identificador del correo para evitar que el lector vuelva a importar las solicitudes borradas.

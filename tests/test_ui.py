@@ -69,7 +69,7 @@ class UITests(unittest.TestCase):
         self.assertEqual(u["correo"], "actualizado@example.com")
         self.assertTrue(db.verificar_clave("clave-actualizada", u["clave_hash"]))
 
-    def test_elimina_con_confirmacion_y_protege_usuario_con_tickets(self):
+    def test_elimina_con_confirmacion_y_solicitudes(self):
         libre = db.crear_usuario("Libre", "libre@example.com", "supervisor")
         at = self.app(self.admin, "Usuarios")
         next(x for x in at.selectbox if x.label == "Crear o editar usuario").select("LIBRE").run()
@@ -80,8 +80,17 @@ class UITests(unittest.TestCase):
         self.assertIsNone(db.usuario_por_id(libre))
         self.assertEqual(len(at.exception), 0)
         next(x for x in at.selectbox if x.label == "Crear o editar usuario").select("SUPERVISOR").run()
+        next(x for x in at.radio if x.label == "¿Borrar también todas sus solicitudes?").set_value("Sí, borrar todas sus solicitudes")
         next(x for x in at.checkbox if x.label.startswith("Confirmo eliminar")).check()
         next(x for x in at.button if x.label == "Eliminar usuario").click().run()
-        self.assertIsNotNone(db.usuario_por_id(self.sup))
-        self.assertTrue(any("Desmarca Activo" in e.value for e in at.error))
+        self.assertIsNone(db.usuario_por_id(self.sup))
+        self.assertIsNone(db.ticket(self.tid))
+        self.assertEqual(len(at.exception), 0)
+
+    def test_borra_solicitud_desde_listado(self):
+        at = self.app(self.admin, "Inicio")
+        at.button(key=f"borrar_{self.tid}").click().run()
+        self.assertIsNotNone(db.ticket(self.tid))
+        next(x for x in at.button if x.label == "Sí, borrar solicitud").click().run()
+        self.assertIsNone(db.ticket(self.tid))
         self.assertEqual(len(at.exception), 0)
