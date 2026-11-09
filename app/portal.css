@@ -125,3 +125,13 @@ button[kind="primary"],button[kind="primaryFormSubmit"]{background:linear-gradie
 [data-testid="stToast"] [data-testid="stMarkdownContainer"], [data-testid="stToast"] p,[data-testid="stToast"] span{color:#fff!important}
 [data-testid="stToast"] button{color:#fff!important}
 @media(max-width:767px){[class*="st-key-ticket_card_"]{padding:18px 16px}.ticket-title{font-size:16px}.st-key-campana_notificaciones{max-width:none;width:100%}}
+
+/* Campana compacta sin etiqueta visible ni marco */
+.st-key-campana_notificaciones{width:48px!important;max-width:48px!important;min-width:48px;margin-left:auto}
+.st-key-campana_notificaciones [data-testid="stPopover"] button{width:46px!important;height:46px!important;min-height:46px;padding:0!important;border:0!important;background:transparent!important;box-shadow:none!important;border-radius:50%!important;justify-content:center;gap:0}
+.st-key-campana_notificaciones [data-testid="stPopover"] button:hover{background:#ddd7f4!important}
+.st-key-campana_notificaciones [data-testid="stPopover"] button [data-testid="stMarkdownContainer"]{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap}
+.st-key-campana_notificaciones .notification-badge{right:-2px;top:4px;min-width:22px;height:22px;font-size:10px}
+.st-key-campana_notificaciones [data-testid="stPopoverButton"] > div > div[aria-hidden="true"]{display:none}
+.st-key-campana_notificaciones [data-testid="stPopoverButton"] > div{justify-content:center;width:100%}
+.st-key-campana_notificaciones [data-testid="stIconMaterial"]{font-size:26px}

@@ -355,7 +355,7 @@ def notificaciones_usuario(uid, limite=30):
     with conexion() as con:
         return con.execute("""SELECT n.*,t.codigo FROM notificaciones n
             JOIN tickets t ON t.id=n.ticket_id JOIN usuarios u ON u.id=n.usuario_id
-            WHERE n.usuario_id=? AND u.activo=1 AND (u.rol='backoffice' OR t.supervisor_id=u.id)
+            WHERE n.usuario_id=? AND n.leida=0 AND u.activo=1 AND (u.rol='backoffice' OR t.supervisor_id=u.id)
             ORDER BY n.id DESC LIMIT ?""", (uid, limite)).fetchall()
 
 
