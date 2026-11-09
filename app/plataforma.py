@@ -613,6 +613,46 @@ def pagina_usuarios(u):
                             st.error(str(exc))
 
 
+@st.fragment(run_every="5s")
+def centro_notificaciones(u):
+    if not acceso_vigente(u):
+        return
+    avisos = db.notificaciones_usuario(u["id"])
+    pendientes = db.contar_notificaciones(u["id"])
+    ultimo = max((n["id"] for n in avisos), default=0)
+    clave = f"notificacion_vista_{u['id']}"
+    anterior = st.session_state.get(clave, ultimo)
+    if ultimo > anterior:
+        nuevos = [n for n in avisos if n["id"] > anterior and not n["leida"]]
+        if nuevos:
+            st.toast(f"{nuevos[0]['titulo']} · {nuevos[0]['codigo']}", icon=":material/notifications_active:")
+    st.session_state[clave] = ultimo
+    estado, campana = st.columns([3, 2], vertical_alignment="center")
+    estado.markdown('<div class="live-status"><span></span> Centro de atención · En línea</div>', unsafe_allow_html=True)
+    with campana.popover(f"Notificaciones · {pendientes}", icon=":material/notifications:", use_container_width=True):
+        st.markdown("### Tu actividad")
+        st.caption("Solicitudes, mensajes y cambios de estado. Actualización cada 5 segundos con el portal abierto.")
+        if pendientes and st.button("Marcar todas como leídas", key="leer_notificaciones"):
+            db.marcar_notificaciones(u["id"])
+            st.rerun(scope="app")
+        if not avisos:
+            st.info("Estás al día. Los nuevos avisos aparecerán aquí.")
+        for n in avisos:
+            with st.container(border=True):
+                st.markdown(f"{'● ' if not n['leida'] else ''}**{n['codigo']} · {n['titulo']}**")
+                st.caption(pd.Timestamp(n["creado_en"], tz="UTC").tz_convert("America/Lima").strftime("%d/%m/%Y · %H:%M"))
+                if st.button("Ver ticket", key=f"aviso_{n['id']}"):
+                    db.marcar_notificaciones(u["id"], n["id"])
+                    if u["rol"] == "backoffice":
+                        ir_a("Gestionar", n["ticket_id"])
+                    else:
+                        st.session_state["pagina_pf"] = "Mis solicitudes"
+                        abrir_detalle(n["ticket_id"])
+                    st.rerun(scope="app")
+        if len(avisos) == 30:
+            st.caption("Mostrando los 30 avisos más recientes.")
+
+
 # ---------- aplicación ----------
 usuario = st.session_state.get("usuario")
 if not usuario:
@@ -640,6 +680,8 @@ with st.sidebar:
     st.divider()
     st.markdown(f'<div class="sidebar-profile">{esc(usuario["nombre"].title())}<small>{"Equipo de atención" if usuario["rol"] == "backoffice" else "Supervisor"}</small></div>', unsafe_allow_html=True)
     st.button("Cerrar sesión", key="navb_salir", icon=":material/logout:", use_container_width=True, on_click=cerrar_sesion)
+
+centro_notificaciones(usuario)
 
 st.markdown(cabecera(NAV_INFO[pagina][1], usuario["nombre"], "Equipo de atención" if usuario["rol"] == "backoffice" else "Supervisor"), unsafe_allow_html=True)
 {"Mis solicitudes": pagina_mis_solicitudes, "Nueva solicitud": pagina_nueva, "Inicio": pagina_inicio,

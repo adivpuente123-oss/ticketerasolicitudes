@@ -106,3 +106,9 @@ En Usuarios, selecciona una cuenta en «Crear o editar usuario» para modificar 
 Back office puede borrar solicitudes desde el botón Borrar de cada solicitud en el listado y confirmar en el listado. Se eliminan también sus mensajes, historial y avisos de correo de la plataforma.
 
 Al eliminar un usuario, elige si deseas borrar también todas sus solicitudes. Con Sí y la confirmación se borran la cuenta, sus solicitudes y sus registros asociados en una sola operación. Con No, se elimina la cuenta y se conservan las solicitudes sin usuario asociado. No puedes eliminar tu propia cuenta. Los correos y borradores que ya existen en Outlook no se eliminan; se conserva únicamente una huella del identificador del correo para evitar que el lector vuelva a importar las solicitudes borradas.
+
+## Notificaciones en el portal
+
+El centro de notificaciones muestra un contador de avisos no leídos y permite abrir el ticket o marcar todos como leídos. Los avisos quedan guardados por usuario y se actualizan cada 5 segundos mientras el portal está abierto. Al llegar actividad nueva aparece un aviso emergente. No son notificaciones del navegador con la aplicación cerrada.
+
+Se generan avisos por nuevas solicitudes, mensajes de conversación (web o correo) y cambios del ticket. El autor no recibe su propio aviso; back office recibe actividad de todas las solicitudes y cada supervisor solo la de sus tickets. Se generan a partir de la actualización, sin avisos retroactivos. Al borrar una solicitud o usuario se eliminan sus notificaciones asociadas.

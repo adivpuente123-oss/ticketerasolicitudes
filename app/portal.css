@@ -85,3 +85,26 @@ button:focus-visible,input:focus-visible{outline:3px solid #8cb4ff!important;out
 @media(max-width:1100px){.block-container{padding-left:1.5rem;padding-right:1.5rem}.kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.access-art{padding:30px;min-height:620px}.access-art h1{font-size:36px}.st-key-access_form{padding:25px}}
 @media(max-width:767px){.block-container{padding:3.8rem 1rem 2rem}.h1{font-size:26px}.mig{margin-bottom:20px;gap:12px}.mig .yo{font-size:11px}.kpis{gap:10px}.kp{padding:15px}.kp .n{font-size:29px}.kp .et{font-size:9px}.workspace-banner{padding:24px;min-height:150px}.workspace-banner h1{font-size:25px}.access-art{min-height:340px;padding:28px}.access-art h1{font-size:34px;margin:16px 0}.access-art p{font-size:12px}.access-art .access-foot{display:none}.st-key-access_form{padding:25px}.ticket-meta{gap:5px 14px}[class*="st-key-card_"]{padding:20px}.sk{padding:20px}}
 @media(prefers-reduced-motion:reduce){button{transition:none}}
+
+/* Panel de actividad */
+:root{--accent:#5b4ce3;--surface:#f4f5fc;--line:#e2e5f3}
+.stApp{background:radial-gradient(ellipse at 95% 0%,#e5e9ff 0%,transparent 43%),var(--surface)}
+[data-testid="stSidebar"]{background:linear-gradient(165deg,#131d3d,#20204d 65%,#30225e)}
+.workspace-banner{position:relative;overflow:hidden;box-shadow:0 14px 35px #27275a20;border:1px solid #ffffff40}
+.workspace-banner::after{content:"";position:absolute;right:-45px;top:-65px;width:240px;height:240px;border:32px solid #b2adff20;border-radius:50%;pointer-events:none}
+.kp{position:relative;overflow:hidden;border-radius:18px;box-shadow:0 7px 20px #25255608;transition:transform .2s,box-shadow .2s}
+.kp::before{content:"";position:absolute;top:0;left:0;right:0;height:4px;background:linear-gradient(90deg,#6654e9,#a38aff)}
+.kp:nth-child(2)::before{background:linear-gradient(90deg,#eea742,#ffd39c)}
+.kp:nth-child(3)::before{background:linear-gradient(90deg,#328bda,#8ccaff)}
+.kp:nth-child(4)::before{background:linear-gradient(90deg,#229b88,#79d4b7)}
+.kp:hover{transform:translateY(-3px);box-shadow:0 12px 26px #25255612}
+.kp .n{font-size:38px}.kp .et svg{color:#6856d9}
+[class*="st-key-ticket_card_"]{border-radius:16px;border-left:4px solid #8b80ec;transition:box-shadow .2s,border-color .2s}
+[class*="st-key-ticket_card_"]:hover{box-shadow:0 9px 24px #3028650d;border-left-color:#5b4ce3}
+button[kind="primary"],button[kind="primaryFormSubmit"]{background:linear-gradient(110deg,#5b4ce3,#775ce7)!important;border-color:#5b4ce3!important;box-shadow:0 5px 14px #5b4ce325}
+.live-status{display:flex;align-items:center;gap:9px;color:#5c6682;font-size:12px;padding:8px 0 20px}
+.live-status span{width:8px;height:8px;background:#279d80;border-radius:50%;box-shadow:0 0 0 5px #279d8012;animation:live-pulse 2.8s ease-in-out infinite}
+[data-testid="stPopover"] button{border-radius:12px!important;border-color:#d5cff4!important;color:#5344b1!important;background:#f7f5ff!important}
+@keyframes live-pulse{50%{box-shadow:0 0 0 8px #279d8005}}
+@media(prefers-reduced-motion:reduce){.live-status span{animation:none}.kp,[class*="st-key-ticket_card_"]{transition:none}.kp:hover{transform:none}}
+@media(max-width:767px){.live-status{font-size:10px}.kp .n{font-size:30px}}

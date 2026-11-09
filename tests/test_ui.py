@@ -94,3 +94,20 @@ class UITests(unittest.TestCase):
         next(x for x in at.button if x.label == "Sí, borrar solicitud").click().run()
         self.assertIsNone(db.ticket(self.tid))
         self.assertEqual(len(at.exception), 0)
+
+    def test_notificacion_abre_ticket_y_marca_leida(self):
+        db.agregar_mensaje(self.tid, self.admin, 'Mensaje nuevo para supervisor')
+        at = self.app(self.sup)
+        aviso = db.notificaciones_usuario(self.sup)[0]
+        at.button(key=f"aviso_{aviso['id']}").click().run()
+        self.assertEqual(len(at.exception), 0)
+        self.assertEqual(db.contar_notificaciones(self.sup), 0)
+        self.assertTrue(any('Consulta propia' in x.value for x in at.markdown))
+        self.assertFalse(any('Consulta ajena' in x.value for x in at.markdown))
+
+    def test_notificaciones_marca_todas_leidas(self):
+        at = self.app(self.admin, 'Inicio')
+        self.assertEqual(db.contar_notificaciones(self.admin), 2)
+        at.button(key='leer_notificaciones').click().run()
+        self.assertEqual(db.contar_notificaciones(self.admin), 0)
+        self.assertEqual(len(at.exception), 0)

@@ -63,6 +63,16 @@ CREATE TABLE IF NOT EXISTS correo_salida (
     estado TEXT NOT NULL DEFAULT 'pendiente', error TEXT,
     creado_en TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+CREATE TABLE IF NOT EXISTS notificaciones (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    usuario_id INTEGER NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE,
+    ticket_id INTEGER NOT NULL REFERENCES tickets(id) ON DELETE CASCADE,
+    tipo TEXT NOT NULL,
+    titulo TEXT NOT NULL,
+    leida INTEGER NOT NULL DEFAULT 0,
+    creado_en TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS ix_notificaciones_usuario ON notificaciones(usuario_id, leida, id);
 CREATE TABLE IF NOT EXISTS correos_eliminados (
     huella TEXT PRIMARY KEY
 );
@@ -230,6 +240,7 @@ def crear_ticket(supervisor_id, cartera, tipo_consulta, documento, cuenta, descr
         con.execute("UPDATE tickets SET codigo = ? WHERE id = ?", (codigo, tid))
         con.execute("INSERT INTO historial (ticket_id, fecha, usuario_id, evento, detalle) VALUES (?,?,?,?,?)",
                     (tid, ahora_iso(), usuario_id, "Creado", detalle))
+        _crear_notificaciones(con, tid, "solicitud", "Nueva solicitud", usuario_id or supervisor_id)
         _notificar(con, tid, "Solicitud recibida", f"Tu solicitud {codigo} fue recibida. La revisaremos pronto.", avisar_equipo=True)
     return tid, codigo
 
@@ -255,6 +266,7 @@ def actualizar_ticket(tid, usuario_id, cambios: dict, evento: str, detalle: str 
         con.execute("INSERT INTO historial (ticket_id, fecha, usuario_id, evento, detalle) VALUES (?,?,?,?,?)",
                     (tid, ahora_iso(), usuario_id, evento, detalle))
         if cambios:
+            _crear_notificaciones(con, tid, "estado", "Solicitud actualizada", usuario_id)
             _notificar(con, tid, "Actualización de solicitud", cambios.get("respuesta") or "El equipo actualizó el estado de tu solicitud.")
 
 
@@ -302,6 +314,7 @@ def agregar_mensaje(tid, uid, cuerpo, id_correo=None):
         con.execute("INSERT INTO mensajes(ticket_id,usuario_id,cuerpo,id_correo) VALUES(?,?,?,?)", (tid, uid, cuerpo[:20000], id_correo))
         con.execute("INSERT INTO historial(ticket_id,fecha,usuario_id,evento,detalle) VALUES(?,?,?,?,?)",
                     (tid, ahora_iso(), uid, "Mensaje recibido" if id_correo else "Mensaje", "Por correo" if id_correo else "Desde la web"))
+        _crear_notificaciones(con, tid, "mensaje", "Nuevo mensaje en la conversación", uid)
         if not id_correo:
             _notificar(con, tid, "Nuevo mensaje", cuerpo[:20000], avisar_equipo=u["rol"] == "supervisor")
 
@@ -326,3 +339,33 @@ def abiertas_por_documento(documento, cuenta):
         return [f["codigo"] for f in con.execute(
             "SELECT codigo FROM tickets WHERE documento = ? AND COALESCE(cuenta,'') = ? AND estado <> 'Respondida'",
             (documento, cuenta or ""))]
+
+
+def _crear_notificaciones(con, tid, tipo, titulo, autor_id):
+    t = con.execute("SELECT supervisor_id FROM tickets WHERE id=?", (tid,)).fetchone()
+    if not t:
+        return
+    destinatarios = con.execute("SELECT id FROM usuarios WHERE activo=1 AND (rol='backoffice' OR id=?)", (t["supervisor_id"],)).fetchall()
+    for u in destinatarios:
+        if u["id"] != autor_id:
+            con.execute("INSERT INTO notificaciones(usuario_id,ticket_id,tipo,titulo) VALUES(?,?,?,?)", (u["id"], tid, tipo, titulo))
+
+
+def notificaciones_usuario(uid, limite=30):
+    with conexion() as con:
+        return con.execute("""SELECT n.*,t.codigo FROM notificaciones n
+            JOIN tickets t ON t.id=n.ticket_id JOIN usuarios u ON u.id=n.usuario_id
+            WHERE n.usuario_id=? AND u.activo=1 AND (u.rol='backoffice' OR t.supervisor_id=u.id)
+            ORDER BY n.id DESC LIMIT ?""", (uid, limite)).fetchall()
+
+
+def contar_notificaciones(uid):
+    with conexion() as con:
+        return con.execute("""SELECT count(*) FROM notificaciones n
+            JOIN tickets t ON t.id=n.ticket_id JOIN usuarios u ON u.id=n.usuario_id
+            WHERE n.usuario_id=? AND n.leida=0 AND u.activo=1 AND (u.rol='backoffice' OR t.supervisor_id=u.id)""", (uid,)).fetchone()[0]
+
+
+def marcar_notificaciones(uid, nid=None):
+    with conexion() as con:
+        con.execute("UPDATE notificaciones SET leida=1 WHERE usuario_id=?" + (" AND id=?" if nid is not None else ""), (uid, nid) if nid is not None else (uid,))
