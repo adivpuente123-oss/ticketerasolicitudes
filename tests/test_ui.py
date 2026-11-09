@@ -122,3 +122,15 @@ class UITests(unittest.TestCase):
         self.assertTrue(any('notification-badge' in m.value and '>3<' in m.value for m in at.markdown))
         at.button(key='leer_notificaciones').click().run()
         self.assertFalse(any('class="notification-badge"' in m.value for m in at.markdown))
+
+    def test_solicitudes_sin_banner_y_notificaciones_sin_historial(self):
+        at = self.app(self.admin, 'Inicio')
+        self.assertFalse(any('<section class="workspace-banner"' in m.value for m in at.markdown))
+        aviso = db.notificaciones_usuario(self.admin)[0]
+        at.button(key=f"aviso_{aviso['id']}").click().run()
+        self.assertFalse(any(b.key == f"aviso_{aviso['id']}" for b in at.button))
+        self.assertEqual(db.contar_notificaciones(self.admin), 1)
+        at.button(key='leer_notificaciones').click().run()
+        self.assertEqual(db.notificaciones_usuario(self.admin), [])
+        self.assertFalse(any(str(b.key).startswith('aviso_') for b in at.button))
+        self.assertEqual(len(at.exception), 0)

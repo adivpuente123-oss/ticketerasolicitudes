@@ -16,7 +16,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 import db
 from correo import crear_ticket_desde_correo
 from config import CARTERAS, CONCLUSIONES, CORRESPONDE, ESTADOS_TICKET, TIPOS_CONSULTA
-from estilos_plataforma import (CSS, cabecera, cabecera_tabla, esc, fila_html, kpi, logo_y, mascara, nav_item, numero, acceso_visual, fondo_acceso, banner_trabajo, ticket_resumen)
+from estilos_plataforma import (CSS, cabecera, cabecera_tabla, esc, fila_html, kpi, logo_y, mascara, nav_item, numero, acceso_visual, fondo_acceso, ticket_resumen)
 
 st.set_page_config(page_title="Plataforma de solicitudes", initial_sidebar_state="expanded", layout="wide")
 st.markdown("<style>" + (Path(__file__).parent / "portal.css").read_text(encoding="utf-8") + "</style>", unsafe_allow_html=True)
@@ -278,7 +278,6 @@ def barra_filtros(prefijo):
 def pagina_inicio(u):
     if not acceso_vigente(u):
         return
-    st.markdown(banner_trabajo(), unsafe_allow_html=True)
     st.caption("Actualización automática cada 5 segundos")
     df = db.tickets_df()
     if df.empty:
@@ -637,7 +636,7 @@ def centro_notificaciones(u):
             contador = str(pendientes) if pendientes < 100 else "99+"
             st.markdown(f'<span class="notification-badge" aria-hidden="true">{contador}</span>', unsafe_allow_html=True)
         with st.popover(f"Notificaciones ({pendientes} sin leer)", icon=":material/notifications:", use_container_width=True):
-            st.markdown("### Tu actividad")
+            st.markdown("### Notificaciones pendientes")
             st.caption("Solicitudes, mensajes y cambios de estado. Actualización cada 5 segundos con el portal abierto.")
             if pendientes and st.button("Marcar todas como leídas", key="leer_notificaciones"):
                 db.marcar_notificaciones(u["id"])
@@ -657,7 +656,7 @@ def centro_notificaciones(u):
                             abrir_detalle(n["ticket_id"])
                         st.rerun(scope="app")
             if len(avisos) == 30:
-                st.caption("Mostrando los 30 avisos más recientes.")
+                st.caption("Mostrando hasta 30 avisos pendientes. Los leídos desaparecen de este menú.")
 
 
 # ---------- aplicación ----------
