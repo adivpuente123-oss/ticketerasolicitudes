@@ -111,3 +111,14 @@ class UITests(unittest.TestCase):
         at.button(key='leer_notificaciones').click().run()
         self.assertEqual(db.contar_notificaciones(self.admin), 0)
         self.assertEqual(len(at.exception), 0)
+
+    def test_aviso_flotante_y_contador(self):
+        at = self.app(self.admin, 'Inicio')
+        self.assertTrue(any('notification-badge' in m.value and '>2<' in m.value for m in at.markdown))
+        db.agregar_mensaje(self.tid, self.sup, 'Nueva consulta')
+        at.run()
+        self.assertEqual(len(at.exception), 0)
+        self.assertTrue(any('Nuevo mensaje' in t.value for t in at.toast))
+        self.assertTrue(any('notification-badge' in m.value and '>3<' in m.value for m in at.markdown))
+        at.button(key='leer_notificaciones').click().run()
+        self.assertFalse(any('class="notification-badge"' in m.value for m in at.markdown))
