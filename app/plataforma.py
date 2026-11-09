@@ -242,19 +242,29 @@ def render_tabla(v, modo, al_abrir):
     ini, fin = pag * TAM_PAGINA, min((pag + 1) * TAM_PAGINA, total)
     if v.empty:
         st.markdown('<div class="vacio">No hay solicitudes con estos filtros.<br>Prueba con otro estado o una búsqueda diferente.</div>', unsafe_allow_html=True)
-    for _, t in v.iloc[ini:fin].iterrows():
-        with st.container(key=f"ticket_card_{int(t['id'])}"):
-            datos, accion = st.columns([5, 1.2], vertical_alignment="center")
-            with datos:
-                st.markdown(ticket_resumen(t, t["dias"], modo), unsafe_allow_html=True)
-            with accion:
-                if st.button("Abrir", key=f"abrir_{int(t['id'])}", use_container_width=True):
+    with st.container(key="solicitudes_grid"):
+        with st.container(key="solicitudes_cabecera"):
+            columnas = st.columns([1.2, 2.6, 1.6, .45, .45], vertical_alignment="center")
+            for col, texto in zip(columnas, ["Ticket", "Supervisor" if modo == "bo" else "Solicitud", "Estado", "", ""]):
+                col.caption(texto)
+        for _, t in v.iloc[ini:fin].iterrows():
+            with st.container(key=f"ticket_row_{int(t['id'])}"):
+                codigo, asesor, estado_col, abrir_col, borrar_col = st.columns([1.2, 2.6, 1.6, .45, .45], vertical_alignment="center")
+                codigo.markdown(f'<span class="table-code">{esc(t["codigo"])}</span>', unsafe_allow_html=True)
+                nombre = str(t["supervisor"] or "Sin usuario") if modo == "bo" else (t["tipo_consulta"] or "Solicitud")
+                asesor.markdown(f'<div class="table-person">{esc(nombre.title() if modo == "bo" else nombre)}<small>{esc(t["cartera"])} · {esc(t["tipo_consulta"] or "Por completar") if modo == "bo" else esc(fecha_txt(t["fecha_solicitud"]))}</small></div>', unsafe_allow_html=True)
+                estado = t["estado"]
+                clase, etiqueta = {"Recibida": ("pending", "Pendiente"), "Enviada a verificar": ("review", "En verificación"), "Respondida": ("approved", "Respondida")}[estado]
+                if estado == "Respondida" and t["conclusion"]:
+                    clase, etiqueta = ("approved", "Aprobada") if t["conclusion"] == "PROCEDENTE" else ("rejected", "Rechazada")
+                estado_col.markdown(f'<span class="table-status {clase}">{etiqueta}</span>', unsafe_allow_html=True)
+                if abrir_col.button("Abrir", icon=":material/visibility:", key=f"abrir_{int(t['id'])}", help="Ver solicitud"):
                     al_abrir(int(t["id"]))
                     st.rerun(scope="app")
-                if modo == "bo" and st.button("Borrar", key=f"borrar_{int(t['id'])}", use_container_width=True):
+                if modo == "bo" and borrar_col.button("Borrar", icon=":material/delete_outline:", key=f"borrar_{int(t['id'])}", help="Borrar solicitud"):
                     st.session_state["borrar_ticket"] = int(t["id"])
-            if modo == "bo" and st.session_state.get("borrar_ticket") == int(t["id"]):
-                confirmar_borrado_solicitud(int(t["id"]))
+                if modo == "bo" and st.session_state.get("borrar_ticket") == int(t["id"]):
+                    confirmar_borrado_solicitud(int(t["id"]))
     c1, c2, c3 = st.columns([4, 1.3, 1.3], vertical_alignment="center")
     c1.markdown(f'<div class="pie-tabla">{ini + 1 if total else 0}–{fin} de {total:,} solicitudes · página {pag + 1} de {paginas}</div>', unsafe_allow_html=True)
     c2.button("Anterior", key="pag_ant", on_click=cambiar_pag, args=(-1,), disabled=pag == 0, use_container_width=True)
@@ -278,21 +288,34 @@ def barra_filtros(prefijo):
 def pagina_inicio(u):
     if not acceso_vigente(u):
         return
-    st.caption("Actualización automática cada 5 segundos")
+    titulo_pagina("Panel de solicitudes", "Administración y seguimiento de solicitudes")
     df = db.tickets_df()
-    if df.empty:
-        st.info("No hay solicitudes todavía. Importa tu Excel con `python src/importar_excel.py` o crea una en «Nueva solicitud».")
-        return
     df["dias"] = dias_abierto(df)
-    cab = st.container()                      # se completa abajo, cuando ya están los filtros (el botón Exportar necesita la lista filtrada)
-    st.markdown(kpis_html(df, ("Total de solicitudes", "Por atender", "En verificación", "Respondidas")), unsafe_allow_html=True)
-    v = filtrar(df, *barra_filtros("bo"))
-    with cab:
-        a, b, c = st.columns([7, 1.4, 2.3], vertical_alignment="center")
-        a.markdown('<h1 class="h1">Solicitudes</h1>', unsafe_allow_html=True)
-        b.download_button("Exportar", exportar(v), "solicitudes.csv", "text/csv", key="exp_bo")
-        c.button("Nueva solicitud", type="primary", key="btn_nueva", on_click=cambiar_pagina, args=("Nueva solicitud",))
-    render_tabla(v, "bo", abrir_en_gestionar)
+    pendientes = int((df["estado"] != "Respondida").sum())
+    aprobadas = int(((df["estado"] == "Respondida") & (df["conclusion"] == "PROCEDENTE")).sum())
+    rechazadas = int(((df["estado"] == "Respondida") & (df["conclusion"] == "IMPROCEDENTE")).sum())
+    st.markdown('<div class="summary-grid">' + ''.join(
+        f'<div class="summary-card {clase}"><span class="summary-icon">{icono}</span><strong>{valor}</strong><small>{etiqueta}</small></div>'
+        for clase, icono, valor, etiqueta in [("pending", "◷", pendientes, "Pendientes"), ("approved", "✓", aprobadas, "Aprobadas"), ("rejected", "×", rechazadas, "Rechazadas")]) + '</div>', unsafe_allow_html=True)
+    with st.container(key="listado_panel"):
+        cabecera_panel = st.container()
+        buscar_col, estado_col = st.columns([4, 1])
+        buscar = buscar_col.text_input("Buscar solicitudes", placeholder="Buscar solicitudes", label_visibility="collapsed", key="bo_q", on_change=reiniciar_pag)
+        estado = estado_col.selectbox("Estado", FILTRO_ESTADO, label_visibility="collapsed", key="bo_estado", on_change=reiniciar_pag,
+                                      format_func=lambda x: "Todas" if x == "Todos los estados" else x)
+        with st.expander("Más filtros"):
+            c1, c2 = st.columns(2)
+            cartera = c1.selectbox("Cartera", ["Todas"] + CARTERAS, key="bo_cartera", on_change=reiniciar_pag)
+            orden = c2.selectbox("Orden", ["Más antiguas primero", "Más recientes primero"], key="bo_orden", on_change=reiniciar_pag)
+        v = filtrar(df, buscar, estado, cartera, orden)
+        with cabecera_panel:
+            titulo, exportar_col, nueva = st.columns([4, 1.4, 1.4], vertical_alignment="center")
+            titulo.markdown('<h2 class="panel-heading">Gestión de solicitudes</h2>', unsafe_allow_html=True)
+            exportar_col.download_button("Exportar reporte", exportar(v), "solicitudes.csv", "text/csv", key="exp_bo", icon=":material/file_download:")
+            nueva.button("Nueva solicitud", key="btn_nueva", on_click=cambiar_pagina, args=("Nueva solicitud",), icon=":material/add:")
+        render_tabla(v, "bo", abrir_en_gestionar)
+    st.caption("Actualización automática cada 5 segundos · Las aprobaciones y rechazos corresponden a la conclusión de las solicitudes respondidas.")
+
 
 
 # ---------- páginas del supervisor ----------

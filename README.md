@@ -116,3 +116,9 @@ Se generan avisos por nuevas solicitudes, mensajes de conversación (web o corre
 El listado usa tarjetas blancas con borde definido y sombra sobre un fondo más oscuro para distinguir cada solicitud. La campana muestra una insignia roja con los avisos pendientes (99+ a partir de cien); el texto accesible conserva el número exacto. La actividad nueva genera un aviso flotante verde de mayor duración, sin marcarla como leída automáticamente.
 
 La pestaña Solicitudes presenta el listado sin el banner de Centro de atención. La campana es un icono sin marco rectangular, con contador rojo de pendientes. El menú solo muestra avisos sin leer: al pulsar Ver ticket o Marcar todas como leídas desaparecen de ese menú y no se muestra un historial de leídos.
+
+## Vista compacta de solicitudes
+
+El panel muestra tres indicadores: Pendientes (solicitudes aún no respondidas), Aprobadas (respondidas con conclusión PROCEDENTE) y Rechazadas (respondidas con conclusión IMPROCEDENTE). Una solicitud respondida sin conclusión no cuenta como aprobada ni rechazada.
+
+Gestión de solicitudes reúne buscador, filtro por estado, filtros adicionales y exportación CSV del resultado filtrado. Las filas muestran ticket, supervisor, cartera, consulta y estado con color; el icono del ojo abre el detalle y la papelera conserva la confirmación de borrado. Se mantiene la campana, los permisos y los avisos. En móviles la tabla permite desplazamiento horizontal.
