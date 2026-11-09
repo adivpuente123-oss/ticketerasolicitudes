@@ -82,19 +82,19 @@ class Graph:
                     return
                 con.execute("UPDATE correo_salida SET estado='procesando' WHERE id=?", (r["id"],))
             try:
-                self.request(self.base + "/sendMail", "POST", {"message": {
+                self.request(self.base + "/messages", "POST", {
                     "subject": r["asunto"], "body": {"contentType": "Text", "content": r["cuerpo"]},
-                    "toRecipients": [{"emailAddress": {"address": r["destinatario"]}}]}})
+                    "toRecipients": [{"emailAddress": {"address": r["destinatario"]}}]})
             except Exception as exc:
                 # Retry throttling/auth rejection safely; ambiguous send failures require human review.
                 seguro = isinstance(exc, HTTPError) and exc.code in (401, 403, 429)
                 with db.conexion() as con:
                     con.execute("UPDATE correo_salida SET estado=?,error=? WHERE id=?",
-                                ("pendiente" if seguro else "revisar", "Envío rechazado; revisar configuración" if seguro else "Revisar Enviados antes de reintentar", r["id"]))
+                                ("pendiente" if seguro else "revisar", "Envío rechazado; revisar configuración" if seguro else "Revisar Borradores antes de reintentar", r["id"]))
                 raise
             else:
                 with db.conexion() as con:
-                    con.execute("UPDATE correo_salida SET estado='aceptado_microsoft',error=NULL WHERE id=?", (r["id"],))
+                    con.execute("UPDATE correo_salida SET estado='borrador',error=NULL WHERE id=?", (r["id"],))
 
 
 def main():

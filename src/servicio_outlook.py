@@ -1,7 +1,7 @@
 """Puente bidireccional. Outlook clásico, sesión Windows y una sola instancia.
 
 No usa contraseñas. Solo lee la subcarpeta Solicitudes del buzón seleccionado.
-Los envíos quedan en Outlook; enviado aquí significa entregado a Outlook, no entrega al destinatario.
+Los avisos se guardan en Borradores. Solo el usuario puede enviarlos desde Outlook.
 """
 import argparse
 import os
@@ -57,7 +57,27 @@ def recibir(carpeta):
             pass  # Another receiver committed this Message-ID first.
 
 
+def respuesta_original(app, cuenta, fila):
+    with db.conexion() as con:
+        ticket = con.execute("SELECT id_correo FROM tickets WHERE id=?", (fila["ticket_id"],)).fetchone()
+        supervisor = con.execute("SELECT u.correo FROM tickets t JOIN usuarios u ON u.id=t.supervisor_id WHERE t.id=?", (fila["ticket_id"],)).fetchone()
+    if not ticket or not ticket["id_correo"] or not supervisor or fila["destinatario"] != supervisor["correo"]:
+        return app.CreateItem(0)
+    carpeta = cuenta.DeliveryStore.GetDefaultFolder(6).Folders.Item("Solicitudes")
+    for item in list(carpeta.Items):
+        if getattr(item, "Class", None) != 43:
+            continue
+        try:
+            ident = item.PropertyAccessor.GetProperty("http://schemas.microsoft.com/mapi/proptag/0x1035001F") or item.EntryID
+        except Exception:
+            ident = item.EntryID
+        if str(ident) == ticket["id_correo"]:
+            return item.Reply()
+    raise RuntimeError("No se encontró el correo original en Solicitudes; revisa antes de reintentar.")
+
+
 def enviar(app, cuenta):
+    """Nombre conservado por compatibilidad: solo crea borradores, nunca envía."""
     while True:
         with db.conexion() as con:
             con.execute("BEGIN IMMEDIATE")
@@ -66,17 +86,20 @@ def enviar(app, cuenta):
                 return
             con.execute("UPDATE correo_salida SET estado='procesando' WHERE id=?", (r["id"],))
         try:
-            mail = app.CreateItem(0)
+            mail = respuesta_original(app, cuenta, r)
             mail.SendUsingAccount = cuenta
             mail.To, mail.Subject, mail.Body = r["destinatario"], r["asunto"], r["cuerpo"]
-            mail.Send()
+            mail.Save()
+            borradores = cuenta.DeliveryStore.GetDefaultFolder(16)
+            if mail.Parent.EntryID != borradores.EntryID:
+                mail.Move(borradores)
             with db.conexion() as con:
-                con.execute("UPDATE correo_salida SET estado='entregado_outlook',error=NULL WHERE id=?", (r["id"],))
+                con.execute("UPDATE correo_salida SET estado='borrador',error=NULL WHERE id=?", (r["id"],))
         except Exception:
-            # No auto-retry: Send might have queued before the connection failed.
+            # No repetir automáticamente: el borrador puede haberse guardado.
             with db.conexion() as con:
-                con.execute("UPDATE correo_salida SET estado='revisar',error='Revisar Bandeja de salida y Enviados antes de reintentar' WHERE id=?", (r["id"],))
-            logging.exception("No se pudo confirmar envío %s", r["id"])
+                con.execute("UPDATE correo_salida SET estado='revisar',error='Revisar Borradores antes de reintentar' WHERE id=?", (r["id"],))
+            logging.exception("No se pudo confirmar el borrador %s", r["id"])
 
 
 def main():

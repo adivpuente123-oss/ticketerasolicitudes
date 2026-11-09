@@ -461,12 +461,12 @@ def pagina_buzon(u):
         st.info(f"Última revisión: {servicio['actualizado_en']} · {servicio['detalle']}")
     else:
         st.warning("El servicio de correo todavía no se ha conectado. Configura Microsoft 365 en el alojamiento o inicia el puente de Outlook clásico.")
-    st.caption("Los tickets se guardan aunque el correo esté desconectado. Los avisos quedan en cola. Aceptado por Microsoft o entregado a Outlook no confirma entrega al destinatario.")
+    st.caption("Los avisos se guardan en Borradores del buzón de atención. Revísalos y envíalos manualmente desde Outlook. El estado borrador no confirma un envío.")
     st.dataframe(cola, hide_index=True, width="stretch")
     revisar = cola[cola["estado"].isin(["revisar", "procesando"])]
     if not revisar.empty:
         elegido = st.selectbox("Envío que requiere revisión", revisar["id"].tolist())
-        confirmado = st.checkbox("Revisé Enviados y Bandeja de salida: este correo no se envió ni está en cola en Outlook")
+        confirmado = st.checkbox("Revisé Borradores, Enviados y Bandeja de salida: este correo no existe ni se envió")
         if st.button("Volver a poner en cola", disabled=not confirmado):
             with db.conexion() as con:
                 con.execute("UPDATE correo_salida SET estado='pendiente',error=NULL WHERE id=? AND estado IN ('revisar','procesando')", (int(elegido),))

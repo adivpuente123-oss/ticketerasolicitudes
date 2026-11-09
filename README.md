@@ -7,7 +7,7 @@ Portal web para supervisores y back office, basado en la aplicación del ZIP ori
 - Estados: Recibida → Enviada a verificar → Respondida.
 - Listado y detalle del supervisor se actualizan cada 5 segundos; no es una conexión push instantánea.
 - Conversación por ticket. Responder por correo conservando [SOL-0001] añade un mensaje al mismo ticket.
-- Avisos por correo al registrar solicitudes, cambiar estados o escribir desde la web.
+- Avisos en Borradores al registrar solicitudes, cambiar estados o escribir desde la web. Se revisan y envían manualmente desde Outlook; no hay envío automático.
 - Historial, filtros y exportación; se conserva el dashboard anterior y la importación de Excel.
 - Cola persistente: un error de correo no pierde el ticket. Los envíos ambiguos requieren revisión para evitar duplicados.
 
@@ -63,13 +63,21 @@ Cuenta: 0001234567
 Descripción de la atención requerida.
 ```
 
-En Correo de atención se ve la última revisión y los 100 últimos envíos. `aceptado_microsoft` significa que Graph aceptó la solicitud, no que el destinatario la recibió. Para `revisar` o `procesando` tras una interrupción, consulta Enviados antes de volver a ponerlo en cola. Revisa también los registros del servidor y eventuales mensajes de no entrega.
+En Correo de atención se ve la última revisión y los 100 últimos envíos. `borrador` significa que el aviso está preparado para revisión manual. Para `revisar` o `procesando` tras una interrupción, consulta Borradores y Enviados antes de volver a ponerlo en cola. Revisa también los registros del servidor y eventuales mensajes de no entrega.
 
 Referencias de Microsoft: [autenticación de servidor](https://learn.microsoft.com/en-us/entra/identity-platform/v2-oauth2-client-creds-grant-flow), [lectura de mensajes](https://learn.microsoft.com/en-us/graph/api/mailfolder-list-messages?view=graph-rest-1.0), [envío](https://learn.microsoft.com/en-us/graph/api/user-sendmail?view=graph-rest-1.0).
 
 ## Alternativa: Outlook clásico en Windows
 
 Con el mismo directorio y base del portal en un equipo Windows, instala y configura Outlook clásico con la cuenta de atención. Crea la carpeta Solicitudes y su regla; ejecuta `iniciar_correo.bat`. El equipo y Outlook deben permanecer abiertos. Esta alternativa no funciona con el nuevo Outlook y no debe ejecutarse a la vez que el servicio Graph sobre el mismo buzón. `src/leer_outlook.py` se conserva por compatibilidad; usa el nuevo servicio para el flujo bidireccional.
+
+## Revisión manual de correo
+
+Los servicios Outlook y Graph guardan los avisos en **Borradores** del buzón de atención; nunca los envían automáticamente. El estado `borrador` en Correo de atención solo confirma su preparación. Abre Outlook, revisa destinatario y texto, y pulsa Enviar cuando corresponda. El portal no detecta después ese envío manual.
+
+La confirmación es: «Tu solicitud SOL-0001 fue recibida. La revisaremos pronto.» En Outlook clásico se prepara con Responder sobre la solicitud original, conservando el hilo y el código en el asunto. Conserva el original en Solicitudes hasta que se genere el borrador. Los avisos al equipo y las solicitudes web se preparan como mensajes nuevos. Graph prepara mensajes nuevos con el código del ticket.
+
+Los avisos pendientes anteriores también pasarán a Borradores. Si ocurre un error, revisa Borradores antes de reencolar para evitar duplicados. Detén el lector anterior antes de actualizar y reinícialo después: un proceso antiguo seguirá usando el comportamiento anterior.
 
 ## Datos y mantenimiento
 

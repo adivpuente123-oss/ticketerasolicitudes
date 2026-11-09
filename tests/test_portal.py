@@ -60,15 +60,26 @@ class PortalTests(unittest.TestCase):
             self.assertIn("Atendida", mail["cuerpo"])
             self.assertEqual(mail["destinatario"], "supervisor@example.com")
 
-    def test_salida_envia_una_vez_y_no_reintenta_error_ambiguo(self):
+    def test_borradores_responden_al_original_sin_enviar_ni_duplicar(self):
         self.nuevo()
         app, cuenta = Mock(), Mock()
+        original = Mock()
+        original.Class = 43
+        original.PropertyAccessor.GetProperty.return_value = "correo-1"
+        cuenta.DeliveryStore.GetDefaultFolder.return_value.Folders.Item.return_value.Items = [original]
         enviar(app, cuenta)
-        self.assertEqual(app.CreateItem.return_value.Send.call_count, 2)
+        original.Reply.assert_called_once()
+        original.Reply.return_value.Save.assert_called_once()
+        original.Reply.return_value.Send.assert_not_called()
+        self.assertEqual(original.Reply.return_value.Body, "Tu solicitud SOL-0001 fue recibida. La revisaremos pronto.")
+        self.assertEqual(app.CreateItem.return_value.Save.call_count, 1)
+        app.CreateItem.return_value.Send.assert_not_called()
         enviar(app, cuenta)
-        self.assertEqual(app.CreateItem.return_value.Send.call_count, 2)
+        self.assertEqual(app.CreateItem.return_value.Save.call_count, 1)
         self.nuevo("correo-2")
-        app.CreateItem.return_value.Send.side_effect = RuntimeError("Outlook desconectado")
+        original.PropertyAccessor.GetProperty.return_value = "correo-2"
+        original.Reply.return_value.Save.side_effect = RuntimeError("Outlook desconectado")
+        app.CreateItem.return_value.Save.side_effect = RuntimeError("Outlook desconectado")
         enviar(app, cuenta)
         with db.conexion() as con:
             self.assertEqual(con.execute("SELECT count(*) FROM correo_salida WHERE estado='revisar'").fetchone()[0], 2)
