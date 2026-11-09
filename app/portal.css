@@ -108,3 +108,20 @@ button[kind="primary"],button[kind="primaryFormSubmit"]{background:linear-gradie
 @keyframes live-pulse{50%{box-shadow:0 0 0 8px #279d8005}}
 @media(prefers-reduced-motion:reduce){.live-status span{animation:none}.kp,[class*="st-key-ticket_card_"]{transition:none}.kp:hover{transform:none}}
 @media(max-width:767px){.live-status{font-size:10px}.kp .n{font-size:30px}}
+
+/* Contraste del listado y avisos flotantes */
+:root{--surface:#e5eaf4}
+.stApp{background:linear-gradient(145deg,#e5eaf4,#edf0f7)}
+[class*="st-key-ticket_card_"]{background:#fff;border:1px solid #a5b4ce;border-left:6px solid #5542cc;border-radius:14px;box-shadow:0 5px 14px #2433541c;margin-bottom:14px;padding:22px 24px}
+[class*="st-key-ticket_card_"]:hover{border-color:#7765d6;border-left-color:#4431b5;box-shadow:0 9px 22px #24335429}
+.ticket-code{color:#4934ac;font-size:12px;font-weight:750}
+.ticket-title{color:#101d36;font-size:17px;font-weight:700}
+.ticket-meta{color:#52627b;font-size:12px}.ticket-meta strong{color:#243752;font-weight:600}
+.st-key-campana_notificaciones{position:relative;max-width:320px;margin-left:auto}
+.st-key-campana_notificaciones [data-testid="stPopover"] button{background:#fff!important;border:1px solid #afa3de!important;box-shadow:0 3px 9px #3a2e6610;color:#352475!important;padding-right:30px}
+.notification-badge{position:absolute;top:0;right:8px;transform:translateY(-35%);z-index:20;min-width:24px;height:24px;padding:0 6px;display:inline-flex;align-items:center;justify-content:center;border-radius:99px;background:#d9253d;color:#fff;border:2px solid #fff;box-shadow:0 2px 6px #b71c3433;font:700 11px/1 "Segoe UI",sans-serif;pointer-events:none}
+.st-key-campana_notificaciones [data-testid="stMarkdown"]:has(.notification-badge){position:absolute;inset:0;pointer-events:none}
+[data-testid="stToast"]{background:#123c33!important;color:#fff!important;border:1px solid #2c6958!important;border-left:5px solid #47df9a!important;border-radius:15px!important;box-shadow:0 12px 35px #102b3d38!important;min-width:280px;max-width:min(420px,calc(100vw - 24px))}
+[data-testid="stToast"] [data-testid="stMarkdownContainer"], [data-testid="stToast"] p,[data-testid="stToast"] span{color:#fff!important}
+[data-testid="stToast"] button{color:#fff!important}
+@media(max-width:767px){[class*="st-key-ticket_card_"]{padding:18px 16px}.ticket-title{font-size:16px}.st-key-campana_notificaciones{max-width:none;width:100%}}

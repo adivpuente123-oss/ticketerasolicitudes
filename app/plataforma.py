@@ -625,32 +625,39 @@ def centro_notificaciones(u):
     if ultimo > anterior:
         nuevos = [n for n in avisos if n["id"] > anterior and not n["leida"]]
         if nuevos:
-            st.toast(f"{nuevos[0]['titulo']} · {nuevos[0]['codigo']}", icon=":material/notifications_active:")
+            texto = f"{nuevos[0]['titulo']} · {nuevos[0]['codigo']}"
+            if len(nuevos) > 1:
+                texto += f" · y {len(nuevos) - 1} avisos más"
+            st.toast(texto, icon=":material/notifications_active:", duration="long")
     st.session_state[clave] = ultimo
     estado, campana = st.columns([3, 2], vertical_alignment="center")
     estado.markdown('<div class="live-status"><span></span> Centro de atención · En línea</div>', unsafe_allow_html=True)
-    with campana.popover(f"Notificaciones · {pendientes}", icon=":material/notifications:", use_container_width=True):
-        st.markdown("### Tu actividad")
-        st.caption("Solicitudes, mensajes y cambios de estado. Actualización cada 5 segundos con el portal abierto.")
-        if pendientes and st.button("Marcar todas como leídas", key="leer_notificaciones"):
-            db.marcar_notificaciones(u["id"])
-            st.rerun(scope="app")
-        if not avisos:
-            st.info("Estás al día. Los nuevos avisos aparecerán aquí.")
-        for n in avisos:
-            with st.container(border=True):
-                st.markdown(f"{'● ' if not n['leida'] else ''}**{n['codigo']} · {n['titulo']}**")
-                st.caption(pd.Timestamp(n["creado_en"], tz="UTC").tz_convert("America/Lima").strftime("%d/%m/%Y · %H:%M"))
-                if st.button("Ver ticket", key=f"aviso_{n['id']}"):
-                    db.marcar_notificaciones(u["id"], n["id"])
-                    if u["rol"] == "backoffice":
-                        ir_a("Gestionar", n["ticket_id"])
-                    else:
-                        st.session_state["pagina_pf"] = "Mis solicitudes"
-                        abrir_detalle(n["ticket_id"])
-                    st.rerun(scope="app")
-        if len(avisos) == 30:
-            st.caption("Mostrando los 30 avisos más recientes.")
+    with campana.container(key="campana_notificaciones"):
+        if pendientes:
+            contador = str(pendientes) if pendientes < 100 else "99+"
+            st.markdown(f'<span class="notification-badge" aria-hidden="true">{contador}</span>', unsafe_allow_html=True)
+        with st.popover(f"Notificaciones ({pendientes} sin leer)", icon=":material/notifications:", use_container_width=True):
+            st.markdown("### Tu actividad")
+            st.caption("Solicitudes, mensajes y cambios de estado. Actualización cada 5 segundos con el portal abierto.")
+            if pendientes and st.button("Marcar todas como leídas", key="leer_notificaciones"):
+                db.marcar_notificaciones(u["id"])
+                st.rerun(scope="app")
+            if not avisos:
+                st.info("Estás al día. Los nuevos avisos aparecerán aquí.")
+            for n in avisos:
+                with st.container(border=True):
+                    st.markdown(f"{'● ' if not n['leida'] else ''}**{n['codigo']} · {n['titulo']}**")
+                    st.caption(pd.Timestamp(n["creado_en"], tz="UTC").tz_convert("America/Lima").strftime("%d/%m/%Y · %H:%M"))
+                    if st.button("Ver ticket", key=f"aviso_{n['id']}"):
+                        db.marcar_notificaciones(u["id"], n["id"])
+                        if u["rol"] == "backoffice":
+                            ir_a("Gestionar", n["ticket_id"])
+                        else:
+                            st.session_state["pagina_pf"] = "Mis solicitudes"
+                            abrir_detalle(n["ticket_id"])
+                        st.rerun(scope="app")
+            if len(avisos) == 30:
+                st.caption("Mostrando los 30 avisos más recientes.")
 
 
 # ---------- aplicación ----------
