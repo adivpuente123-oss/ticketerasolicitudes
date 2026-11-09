@@ -63,6 +63,9 @@ CREATE TABLE IF NOT EXISTS correo_salida (
     estado TEXT NOT NULL DEFAULT 'pendiente', error TEXT,
     creado_en TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+CREATE TABLE IF NOT EXISTS correos_eliminados (
+    huella TEXT PRIMARY KEY
+);
 CREATE TABLE IF NOT EXISTS servicio (
     nombre TEXT PRIMARY KEY, actualizado_en TEXT NOT NULL, detalle TEXT
 );
@@ -140,20 +143,51 @@ def actualizar_usuario(uid, nombre, correo, rol, activo, clave=None):
 
 
 
-def eliminar_usuario(uid, actor_id):
-    """Elimina cuentas sin registros asociados; solo para back office activo."""
+def _autorizar_borrado(con, actor_id):
+    actor = con.execute("SELECT * FROM usuarios WHERE id=?", (actor_id,)).fetchone()
+    if not actor or not actor["activo"] or actor["rol"] != "backoffice":
+        raise PermissionError("Solo back office puede eliminar usuarios o solicitudes.")
+
+
+def _borrar_ticket(con, tid):
+    # Solo conservar huellas para impedir la reimportación del mismo correo.
+    correos = con.execute("SELECT id_correo FROM tickets WHERE id=? UNION SELECT id_correo FROM mensajes WHERE ticket_id=?", (tid, tid)).fetchall()
+    for correo in correos:
+        if correo["id_correo"]:
+            huella = hashlib.sha256(correo["id_correo"].encode()).hexdigest()
+            con.execute("INSERT OR IGNORE INTO correos_eliminados(huella) VALUES(?)", (huella,))
+    con.execute("DELETE FROM correo_salida WHERE ticket_id=?", (tid,))
+    con.execute("DELETE FROM mensajes WHERE ticket_id=?", (tid,))
+    con.execute("DELETE FROM historial WHERE ticket_id=?", (tid,))
+    con.execute("DELETE FROM tickets WHERE id=?", (tid,))
+
+
+def eliminar_solicitud(tid, actor_id):
     with conexion() as con:
         con.execute("BEGIN IMMEDIATE")
-        actor = con.execute("SELECT * FROM usuarios WHERE id=?", (actor_id,)).fetchone()
-        if not actor or not actor["activo"] or actor["rol"] != "backoffice":
-            raise PermissionError("Solo back office puede eliminar usuarios.")
+        _autorizar_borrado(con, actor_id)
+        if not con.execute("SELECT 1 FROM tickets WHERE id=?", (tid,)).fetchone():
+            raise ValueError("La solicitud ya no existe.")
+        _borrar_ticket(con, tid)
+
+
+def eliminar_usuario(uid, actor_id, borrar_solicitudes=False):
+    """Borra la cuenta y, si se confirma, sus solicitudes con todos sus registros."""
+    with conexion() as con:
+        con.execute("BEGIN IMMEDIATE")
+        _autorizar_borrado(con, actor_id)
         if uid == actor_id:
             raise ValueError("No puedes eliminar tu propia cuenta.")
         if not con.execute("SELECT 1 FROM usuarios WHERE id=?", (uid,)).fetchone():
             raise ValueError("El usuario ya no existe.")
-        for tabla, campo in (("tickets", "supervisor_id"), ("historial", "usuario_id"), ("mensajes", "usuario_id")):
-            if con.execute(f"SELECT 1 FROM {tabla} WHERE {campo}=? LIMIT 1", (uid,)).fetchone():
-                raise ValueError("Este usuario tiene solicitudes, mensajes o historial. Desmarca Activo y guarda para desactivarlo sin perder sus registros.")
+        if borrar_solicitudes:
+            ids = con.execute("SELECT id FROM tickets WHERE supervisor_id=?", (uid,)).fetchall()
+            for t in ids:
+                _borrar_ticket(con, t["id"])
+        # Conservar solicitudes ajenas y, si se elige No, las del usuario sin cuenta asociada.
+        con.execute("UPDATE tickets SET supervisor_id=NULL WHERE supervisor_id=?", (uid,))
+        con.execute("UPDATE historial SET usuario_id=NULL WHERE usuario_id=?", (uid,))
+        con.execute("UPDATE mensajes SET usuario_id=NULL WHERE usuario_id=?", (uid,))
         con.execute("DELETE FROM usuarios WHERE id=?", (uid,))
 
 
@@ -233,7 +267,8 @@ def historial_df(tid) -> pd.DataFrame:
 
 def existe_id_correo(id_correo) -> bool:
     with conexion() as con:
-        return (con.execute("SELECT 1 FROM tickets WHERE id_correo = ?", (id_correo,)).fetchone() is not None
+        return (con.execute("SELECT 1 FROM correos_eliminados WHERE huella=?", (hashlib.sha256(id_correo.encode()).hexdigest(),)).fetchone() is not None
+                or con.execute("SELECT 1 FROM tickets WHERE id_correo = ?", (id_correo,)).fetchone() is not None
                 or con.execute("SELECT 1 FROM mensajes WHERE id_correo = ?", (id_correo,)).fetchone() is not None)
 
 

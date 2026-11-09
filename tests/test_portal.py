@@ -102,14 +102,54 @@ class PortalTests(unittest.TestCase):
     def test_eliminar_protege_historial_y_acceso(self):
         self.nuevo()
         with self.assertRaises(ValueError):
-            db.eliminar_usuario(self.sup, self.admin)
-        with self.assertRaises(ValueError):
             db.eliminar_usuario(self.admin, self.admin)
         with self.assertRaises(PermissionError):
             db.eliminar_usuario(self.otro, self.sup)
         self.assertIsNotNone(db.usuario_por_id(self.sup))
         self.assertEqual(len(db.tickets_df(self.sup)), 1)
 
+    def test_borra_solicitud_con_dependencias_sin_tocar_otras(self):
+        r = self.nuevo()
+        db.agregar_mensaje(r["tid"], self.sup, "Detalle")
+        otra, _ = db.crear_ticket(self.otro, "IBK", "Consulta", "12345678", "00123456")
+        with self.assertRaises(PermissionError):
+            db.eliminar_solicitud(r["tid"], self.sup)
+        db.eliminar_solicitud(r["tid"], self.admin)
+        self.assertIsNone(db.ticket(r["tid"]))
+        self.assertTrue(db.existe_id_correo("correo-1"))
+        self.assertTrue(self.nuevo().get("duplicado"))
+        self.assertIsNotNone(db.ticket(otra))
+        with db.conexion() as con:
+            for tabla in ("mensajes", "historial", "correo_salida"):
+                self.assertEqual(con.execute(f"SELECT count(*) FROM {tabla} WHERE ticket_id=?", (r["tid"],)).fetchone()[0], 0)
+            self.assertFalse(con.execute("PRAGMA foreign_key_check").fetchall())
+
+    def test_elimina_usuario_y_todas_sus_solicitudes(self):
+        r = self.nuevo()
+        db.agregar_mensaje(r["tid"], self.sup, "Detalle")
+        otra, _ = db.crear_ticket(self.otro, "IBK", "Consulta", "12345678", "00123456")
+        db.agregar_mensaje(otra, self.admin, "Respuesta del equipo")
+        db.eliminar_usuario(self.sup, self.admin, borrar_solicitudes=True)
+        self.assertIsNone(db.usuario_por_id(self.sup))
+        self.assertIsNone(db.ticket(r["tid"]))
+        self.assertIsNotNone(db.ticket(otra))
+        with db.conexion() as con:
+            self.assertFalse(con.execute("PRAGMA foreign_key_check").fetchall())
+            for tabla in ("mensajes", "historial", "correo_salida"):
+                self.assertEqual(con.execute(f"SELECT count(*) FROM {tabla} WHERE ticket_id=?", (r["tid"],)).fetchone()[0], 0)
+
+    def test_elimina_usuario_conservando_solicitudes(self):
+        r = self.nuevo()
+        db.agregar_mensaje(r["tid"], self.sup, "Detalle")
+        db.eliminar_usuario(self.sup, self.admin, borrar_solicitudes=False)
+        self.assertIsNone(db.usuario_por_id(self.sup))
+        self.assertIsNotNone(db.ticket(r["tid"]))
+        self.assertIsNone(db.ticket(r["tid"])["supervisor_id"])
+        self.assertEqual(len(db.mensajes(r["tid"])), 1)
+        with db.conexion() as con:
+            self.assertFalse(con.execute("PRAGMA foreign_key_check").fetchall())
+
 
 if __name__ == "__main__":
     unittest.main()
+

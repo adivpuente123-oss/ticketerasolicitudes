@@ -212,6 +212,29 @@ def exportar(v) -> bytes:
     return out.to_csv(index=False).encode("utf-8-sig")
 
 
+def confirmar_borrado_solicitud(tid):
+    u = st.session_state.get("usuario")
+    if not u or not acceso_vigente(u):
+        return
+    t = db.ticket(tid)
+    if t is None:
+        st.info("La solicitud ya no existe.")
+        return
+    st.write(f"¿Borrar {t['codigo']} y todos sus mensajes, historial y avisos de correo de la plataforma?")
+    si, no = st.columns(2)
+    if si.button("Sí, borrar solicitud", type="primary"):
+        try:
+            db.eliminar_solicitud(tid, u["id"])
+            st.session_state.pop("ticket_sel", None)
+            st.session_state.pop("borrar_ticket", None)
+            st.rerun(scope="app")
+        except (ValueError, PermissionError) as exc:
+            st.error(str(exc))
+    if no.button("Cancelar"):
+        st.session_state.pop("borrar_ticket", None)
+        st.rerun(scope="app")
+
+
 def render_tabla(v, modo, al_abrir):
     total = len(v)
     paginas = max(1, -(-total // TAM_PAGINA))
@@ -228,6 +251,10 @@ def render_tabla(v, modo, al_abrir):
                 if st.button("Abrir", key=f"abrir_{int(t['id'])}", use_container_width=True):
                     al_abrir(int(t["id"]))
                     st.rerun(scope="app")
+                if modo == "bo" and st.button("Borrar", key=f"borrar_{int(t['id'])}", use_container_width=True):
+                    st.session_state["borrar_ticket"] = int(t["id"])
+            if modo == "bo" and st.session_state.get("borrar_ticket") == int(t["id"]):
+                confirmar_borrado_solicitud(int(t["id"]))
     c1, c2, c3 = st.columns([4, 1.3, 1.3], vertical_alignment="center")
     c1.markdown(f'<div class="pie-tabla">{ini + 1 if total else 0}–{fin} de {total:,} solicitudes · página {pag + 1} de {paginas}</div>', unsafe_allow_html=True)
     c2.button("Anterior", key="pag_ant", on_click=cambiar_pag, args=(-1,), disabled=pag == 0, use_container_width=True)
@@ -570,15 +597,16 @@ def pagina_usuarios(u):
         if int(fila["id"]) == u["id"]:
             st.info("No puedes eliminar tu propia cuenta.")
         else:
-            st.caption("Solo se pueden eliminar cuentas sin solicitudes, mensajes ni historial. Si tiene registros, desmarca Activo y guarda los cambios para desactivarla.")
+            st.caption("Puedes conservar sus solicitudes o borrarlas junto con todos sus mensajes, historial y avisos de correo de la plataforma.")
             with st.form(f"eliminar_usuario_{int(fila['id'])}"):
+                borrar = st.radio("¿Borrar también todas sus solicitudes?", ["No, conservar solicitudes", "Sí, borrar todas sus solicitudes"], key=f"borrar_solicitudes_{int(fila['id'])}")
                 confirmado = st.checkbox(f"Confirmo eliminar a {fila['nombre']}")
                 if st.form_submit_button("Eliminar usuario"):
                     if not confirmado:
                         st.error("Marca la confirmación para eliminar este usuario.")
                     else:
                         try:
-                            db.eliminar_usuario(int(fila["id"]), u["id"])
+                            db.eliminar_usuario(int(fila["id"]), u["id"], borrar_solicitudes=borrar.startswith("Sí"))
                             st.toast("Usuario eliminado")
                             st.rerun()
                         except (ValueError, PermissionError) as exc:
