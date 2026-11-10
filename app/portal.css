@@ -275,3 +275,13 @@ button[kind="primary"]:hover,button[kind="primaryFormSubmit"]:hover{background:#
 [class*="st-key-gestion_conversacion_"] [data-testid="stFormSubmitButton"] button{min-height:41px;border-radius:7px;font-size:14px}
 .internal-note{background:#fff9e9;border:1px solid #f2e6c3;border-radius:9px;padding:13px 15px;margin:12px 0}.internal-note>div{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap}.internal-note strong{color:#886b35;font-size:13px}.internal-note small{color:#a29172;font-size:11px}.internal-note p{margin:8px 0 0;color:#756449;font-size:14px;line-height:1.7;overflow-wrap:anywhere}
 @media(max-width:767px){.gestion-heading .request-title{font-size:26px}.st-key-gestion_resumen,.st-key-gestion_propiedades,.st-key-gestion_solicitante,.st-key-gestion_tiempos,[class*="st-key-gestion_conversacion_"]{padding:18px;border-radius:11px}.gestion-subject{font-size:22px}.gestion-card-title{font-size:19px}.chat-message{gap:8px}.chat-avatar{min-width:29px;height:29px;font-size:11px}.chat-bubble{padding:10px 12px}.requester-profile small{font-size:11px}}
+
+/* Alineación uniforme del menú, incluso cuando una etiqueta ocupa dos líneas. */
+[data-testid="stSidebar"] .sidebar-label,
+[data-testid="stSidebar"] .sidebar-profile{text-align:left;margin-left:10px;margin-right:0}
+[data-testid="stSidebar"] .sidebar-profile{padding-left:0}
+[data-testid="stSidebar"] .stButton button{justify-content:flex-start!important;text-align:left!important}
+[data-testid="stSidebar"] .stButton button > div{justify-content:flex-start!important;width:100%;gap:8px}
+[data-testid="stSidebar"] .stButton button [data-testid="stMarkdownContainer"]{flex:1;min-width:0;text-align:left!important}
+[data-testid="stSidebar"] .stButton button [data-testid="stMarkdownContainer"] p{text-align:left!important}
+[data-testid="stSidebar"] .stButton button [data-testid="stIconMaterial"]{flex-shrink:0}
