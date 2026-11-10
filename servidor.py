@@ -1,6 +1,7 @@
 """Portal con sesión HTTP persistente y lector de correo opcional."""
 import asyncio
 import os
+import signal
 from pathlib import Path
 import subprocess
 import sys
@@ -25,7 +26,7 @@ async def main():
     portal = subprocess.Popen([sys.executable, "-m", "streamlit", "run", "app/plataforma.py",
         "--server.address=127.0.0.1", f"--server.port={interno}", "--server.headless=true", "--theme.base=light"], cwd=RAIZ, env=entorno)
     correo = None
-    runner = web.AppRunner(crear_app(f"http://127.0.0.1:{interno}"), access_log=None)
+    runner = web.AppRunner(crear_app(f"http://127.0.0.1:{interno}"), access_log=None, shutdown_timeout=3)
     try:
         await runner.setup()
         direccion = "0.0.0.0" if os.getenv("PORTAL_CLOUD") == "1" or os.getenv("PORTAL_RED") == "1" else "127.0.0.1"
@@ -48,6 +49,10 @@ async def main():
 
 
 if __name__ == "__main__":
+    if hasattr(signal, "SIGBREAK"):
+        def interrumpir(_signum, _frame):
+            raise KeyboardInterrupt
+        signal.signal(signal.SIGBREAK, interrumpir)
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
