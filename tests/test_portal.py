@@ -25,14 +25,14 @@ class PortalTests(unittest.TestCase):
     def nuevo(self, mid="correo-1"):
         return crear_ticket_desde_correo("supervisor@example.com", "Cancelación IBK", "Cartera: IBK\nDNI: 12345678\nCuenta: 00123456", mid)
 
-    def test_correo_crea_un_ticket_y_dos_avisos(self):
+    def test_correo_crea_un_ticket_y_un_borrador(self):
         r = self.nuevo()
         self.assertTrue(r["ok"])
         self.assertEqual(r["datos"]["cuenta"], "00123456")
         self.assertTrue(self.nuevo().get("duplicado"))
         with db.conexion() as con:
             self.assertEqual(con.execute("SELECT count(*) FROM tickets").fetchone()[0], 1)
-            self.assertEqual(con.execute("SELECT count(*) FROM correo_salida").fetchone()[0], 2)
+            self.assertEqual(con.execute("SELECT count(*) FROM correo_salida").fetchone()[0], 1)
 
     def test_remitente_desconocido_o_inactivo_no_crea_ticket(self):
         self.assertFalse(crear_ticket_desde_correo("extra@example.com", "Hola", "Consulta")["ok"])
@@ -65,24 +65,28 @@ class PortalTests(unittest.TestCase):
         app, cuenta = Mock(), Mock()
         original = Mock()
         original.Class = 43
+        original.Reply.return_value.HTMLBody = "<html><body>Correo original</body></html>"
+        original.Reply.return_value.Subject = "RE: Cancelación IBK"
         original.PropertyAccessor.GetProperty.return_value = "correo-1"
         cuenta.DeliveryStore.GetDefaultFolder.return_value.Folders.Item.return_value.Items = [original]
         enviar(app, cuenta)
         original.Reply.assert_called_once()
         original.Reply.return_value.Save.assert_called_once()
         original.Reply.return_value.Send.assert_not_called()
-        self.assertEqual(original.Reply.return_value.Body, "Tu solicitud SOL-0001 fue recibida. La revisaremos pronto.")
-        self.assertEqual(app.CreateItem.return_value.Save.call_count, 1)
+        self.assertIn("Tu solicitud SOL-0001 fue recibida.", original.Reply.return_value.HTMLBody)
+        self.assertIn("Correo original", original.Reply.return_value.HTMLBody)
+        self.assertEqual(original.Reply.return_value.Subject, "RE: Cancelación IBK")
+        app.CreateItem.assert_not_called()
         app.CreateItem.return_value.Send.assert_not_called()
         enviar(app, cuenta)
-        self.assertEqual(app.CreateItem.return_value.Save.call_count, 1)
+        app.CreateItem.assert_not_called()
         self.nuevo("correo-2")
         original.PropertyAccessor.GetProperty.return_value = "correo-2"
         original.Reply.return_value.Save.side_effect = RuntimeError("Outlook desconectado")
         app.CreateItem.return_value.Save.side_effect = RuntimeError("Outlook desconectado")
         enviar(app, cuenta)
         with db.conexion() as con:
-            self.assertEqual(con.execute("SELECT count(*) FROM correo_salida WHERE estado='revisar'").fetchone()[0], 2)
+            self.assertEqual(con.execute("SELECT count(*) FROM correo_salida WHERE estado='revisar'").fetchone()[0], 1)
 
 
     def test_edita_correo_y_clave_sin_cambiar_id(self):

@@ -59,16 +59,26 @@ class Graph:
             carpeta_id = next((f["id"] for f in carpetas if f["displayName"].casefold() == "solicitudes"), None)
         if not carpeta_id:
             raise RuntimeError("Crea la subcarpeta Solicitudes en Bandeja de entrada y una regla de recepción.")
-        query = urlencode({"$top": 100, "$select": "id,internetMessageId,subject,body,from,receivedDateTime,categories"})
-        for m in self.coleccion(self.base + "/mailFolders/" + quote(carpeta_id, safe="") + "/messages?" + query):
+        query = urlencode({"$top": 100, "$select": "id,internetMessageId,subject,body,from,receivedDateTime,categories,conversationId,internetMessageHeaders"})
+        mensajes = list(self.coleccion(self.base + "/mailFolders/" + quote(carpeta_id, safe="") + "/messages?" + query))
+        for m in mensajes:
+            db.registrar_hilo_correo("graph", self.buzon, m.get("conversationId", ""), m.get("internetMessageId") or m["id"])
+        for m in mensajes:
             if "SIN TICKET" in m.get("categories", []):
                 continue
             mid = m.get("internetMessageId") or m["id"]
+            hilo = m.get("conversationId", "")
             if db.existe_id_correo(mid):
+                db.registrar_hilo_correo("graph", self.buzon, hilo, mid)
                 continue
+            headers = {h["name"].lower(): h["value"] for h in m.get("internetMessageHeaders", [])}
+            responde_a = headers.get("in-reply-to", "").strip()
+            codigo = (db.codigo_por_correo(responde_a) or db.codigo_por_hilo("graph", self.buzon, hilo)) if responde_a else None
             remitente = (m.get("from") or {}).get("emailAddress", {}).get("address", "")
             r = crear_ticket_desde_correo(remitente, m.get("subject", ""), (m.get("body") or {}).get("content", ""), mid,
-                                          m.get("receivedDateTime", "")[:10] or None)
+                                          m.get("receivedDateTime", "")[:10] or None, codigo_ticket=codigo)
+            if r["ok"]:
+                db.registrar_hilo_correo("graph", self.buzon, hilo, mid)
             categorias = list(m.get("categories", [])) + ([r["codigo"]] if r["ok"] else ["SIN TICKET"])
             self.request(self.base + "/messages/" + quote(m["id"], safe=""), "PATCH",
                          {"categories": list(dict.fromkeys(categorias)), **({"isRead": True} if r["ok"] else {})})
@@ -82,9 +92,26 @@ class Graph:
                     return
                 con.execute("UPDATE correo_salida SET estado='procesando' WHERE id=?", (r["id"],))
             try:
-                self.request(self.base + "/messages", "POST", {
-                    "subject": r["asunto"], "body": {"contentType": "Text", "content": r["cuerpo"]},
-                    "toRecipients": [{"emailAddress": {"address": r["destinatario"]}}]})
+                original, interno = db.origen_borrador(r["ticket_id"], r["destinatario"], self.buzon)
+                if interno:
+                    with db.conexion() as con:
+                        con.execute("UPDATE correo_salida SET estado='omitido',error='Aviso interno: no se crea un borrador adicional' WHERE id=?", (r["id"],))
+                    continue
+                if original:
+                    if original.startswith("<"):
+                        query = urlencode({"$filter": "internetMessageId eq '" + original.replace("'", "''") + "'", "$select": "id"})
+                        mensaje = next(self.coleccion(self.base + "/messages?" + query), None)
+                    else:
+                        mensaje = self.request(self.base + "/messages/" + quote(original, safe=""))
+                    if not mensaje or not mensaje.get("id"):
+                        raise RuntimeError("No se encontró el correo original; no se creará un correo nuevo.")
+                    borrador = self.request(self.base + "/messages/" + quote(mensaje["id"], safe="") + "/createReply", "POST", {"comment": r["cuerpo"]})
+                    if not borrador.get("id"):
+                        raise RuntimeError("No se pudo confirmar el borrador de respuesta; revisar Borradores.")
+                else:
+                    self.request(self.base + "/messages", "POST", {
+                        "subject": r["asunto"], "body": {"contentType": "Text", "content": r["cuerpo"]},
+                        "toRecipients": [{"emailAddress": {"address": r["destinatario"]}}]})
             except Exception as exc:
                 # Retry throttling/auth rejection safely; ambiguous send failures require human review.
                 seguro = isinstance(exc, HTTPError) and exc.code in (401, 403, 429)
