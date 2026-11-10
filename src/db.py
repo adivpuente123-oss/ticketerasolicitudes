@@ -65,6 +65,13 @@ CREATE TABLE IF NOT EXISTS mensajes (
     usuario_id INTEGER REFERENCES usuarios(id), cuerpo TEXT NOT NULL,
     id_correo TEXT UNIQUE, creado_en TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+CREATE TABLE IF NOT EXISTS correo_hilos (
+    proveedor TEXT NOT NULL,
+    buzon TEXT NOT NULL,
+    hilo_id TEXT NOT NULL,
+    ticket_id INTEGER NOT NULL REFERENCES tickets(id) ON DELETE CASCADE,
+    PRIMARY KEY(proveedor,buzon,hilo_id,ticket_id)
+);
 CREATE TABLE IF NOT EXISTS correo_salida (
     id INTEGER PRIMARY KEY, ticket_id INTEGER NOT NULL REFERENCES tickets(id),
     destinatario TEXT NOT NULL, asunto TEXT NOT NULL, cuerpo TEXT NOT NULL,
@@ -301,9 +308,11 @@ def _notificar(con, tid, asunto, texto, avisar_equipo=False):
     if not t:
         return
     destinatarios = {t["correo"]} if t["correo"] else set()
-    if avisar_equipo:
+    if avisar_equipo and t["origen"] != "correo":
         destinatarios.add(os.getenv("BUZON_ATENCION", "adiv.puente@goexpertis.com"))
     cuerpo = f"{t['codigo']} · {t['estado']}\n\n{texto}\n\nResponde conservando [{t['codigo']}] en el asunto para continuar la conversación."
+    if t["origen"] == "correo":
+        cuerpo = cuerpo.replace(f"Responde conservando [{t['codigo']}] en el asunto para continuar la conversación.", "Responde a este correo para continuar la conversación.")
     if asunto == "Solicitud recibida":
         cuerpo = texto
     url = os.getenv("PORTAL_URL", "").strip()
@@ -411,3 +420,43 @@ def revocar_sesion(token):
     if token:
         with conexion() as con:
             con.execute("DELETE FROM sesiones WHERE huella=?", (hashlib.sha256(token.encode()).hexdigest(),))
+
+
+def origen_borrador(tid, destinatario, buzon):
+    with conexion() as con:
+        t = con.execute("SELECT t.*,u.correo FROM tickets t LEFT JOIN usuarios u ON u.id=t.supervisor_id WHERE t.id=?", (tid,)).fetchone()
+        if not t:
+            raise ValueError("La solicitud ya no existe.")
+        original = t["id_correo"]
+        if not original:
+            m = con.execute("SELECT id_correo FROM mensajes WHERE ticket_id=? AND id_correo IS NOT NULL ORDER BY id LIMIT 1", (tid,)).fetchone()
+            original = m["id_correo"] if m else None
+        interno = bool(original and destinatario.casefold() == buzon.casefold() and destinatario.casefold() != (t["correo"] or "").casefold())
+        if t["origen"] == "correo" and not original:
+            raise ValueError("Falta el identificador del correo original; no se creará un correo nuevo.")
+        return original, interno
+
+
+def registrar_hilo_correo(proveedor, buzon, hilo_id, id_correo):
+    if not isinstance(hilo_id, str) or not hilo_id:
+        return
+    with conexion() as con:
+        t = con.execute("SELECT id AS ticket_id FROM tickets WHERE id_correo=? UNION SELECT ticket_id FROM mensajes WHERE id_correo=? LIMIT 1", (id_correo, id_correo)).fetchone()
+        if t:
+            con.execute("INSERT OR IGNORE INTO correo_hilos(proveedor,buzon,hilo_id,ticket_id) VALUES(?,?,?,?)", (proveedor, buzon.lower(), hilo_id, t["ticket_id"]))
+
+
+def codigo_por_hilo(proveedor, buzon, hilo_id):
+    if not isinstance(hilo_id, str) or not hilo_id:
+        return None
+    with conexion() as con:
+        tickets = con.execute("SELECT t.codigo FROM correo_hilos h JOIN tickets t ON t.id=h.ticket_id WHERE h.proveedor=? AND h.buzon=? AND h.hilo_id=?", (proveedor, buzon.lower(), hilo_id)).fetchall()
+        return tickets[0]["codigo"] if len(tickets) == 1 else None
+
+
+def codigo_por_correo(id_correo):
+    if not id_correo:
+        return None
+    with conexion() as con:
+        t = con.execute("SELECT codigo FROM tickets WHERE id_correo=? UNION SELECT t.codigo FROM mensajes m JOIN tickets t ON t.id=m.ticket_id WHERE m.id_correo=? LIMIT 1", (id_correo, id_correo)).fetchone()
+        return t["codigo"] if t else None

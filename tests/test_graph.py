@@ -30,14 +30,14 @@ class GraphTests(unittest.TestCase):
         with patch.dict(os.environ, {"MS_FOLDER_ID": "solicitudes"}), patch.object(self.g, "coleccion", return_value=iter([mensaje])), patch.object(self.g, "request") as req:
             self.g.recibir()
             req.assert_not_called()
-        with patch.object(self.g, "request", return_value={}) as req:
+        with patch.object(self.g, "coleccion", return_value=iter([{"id": "original-1"}])), patch.object(self.g, "request", return_value={"id": "borrador-1"}) as req:
             self.g.enviar()
-            self.assertEqual(req.call_count, 2)
-            for llamada in req.call_args_list:
-                self.assertTrue(llamada.args[0].endswith("/messages"))
-                self.assertEqual(llamada.args[1], "POST")
+            req.assert_called_once()
+            self.assertTrue(req.call_args.args[0].endswith("/original-1/createReply"))
+            self.assertEqual(req.call_args.args[1], "POST")
+            self.assertIn("comment", req.call_args.args[2])
         with db.conexion() as con:
-            self.assertEqual(con.execute("SELECT count(*) FROM correo_salida WHERE estado='borrador'").fetchone()[0], 2)
+            self.assertEqual(con.execute("SELECT count(*) FROM correo_salida WHERE estado='borrador'").fetchone()[0], 1)
 
     def test_no_reenvia_automaticamente_timeout_ambiguo(self):
         db.crear_ticket(self.sup, "IBK", "Consulta", "12345678", "00123456")

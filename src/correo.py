@@ -55,7 +55,7 @@ def analizar(asunto: str, cuerpo: str) -> dict:
             "faltantes": faltantes}
 
 
-def crear_ticket_desde_correo(remitente: str, asunto: str, cuerpo: str, id_correo=None, fecha=None) -> dict:
+def crear_ticket_desde_correo(remitente: str, asunto: str, cuerpo: str, id_correo=None, fecha=None, codigo_ticket=None) -> dict:
     """Crea el ticket. Devuelve {'ok': True, 'codigo', 'tid', 'datos', 'supervisor'} o {'ok': False, 'motivo'}."""
     u = db.usuario_por_correo(remitente)
     if not u or not u["activo"]:
@@ -63,9 +63,10 @@ def crear_ticket_desde_correo(remitente: str, asunto: str, cuerpo: str, id_corre
     if id_correo and db.existe_id_correo(id_correo):
         return {"ok": False, "duplicado": True, "motivo": "Este correo ya se había convertido en ticket."}
     referencia = re.search(r"\[(SOL-\d+)\]", asunto or "", re.IGNORECASE)
-    if referencia:
+    codigo_referencia = referencia[1] if referencia else codigo_ticket
+    if codigo_referencia:
         with db.conexion() as con:
-            t = con.execute("SELECT id,supervisor_id,codigo FROM tickets WHERE codigo=?", (referencia[1].upper(),)).fetchone()
+            t = con.execute("SELECT id,supervisor_id,codigo FROM tickets WHERE codigo=?", (codigo_referencia.upper(),)).fetchone()
         if not t:
             return {"ok": False, "motivo": "La referencia del ticket no existe."}
         try:

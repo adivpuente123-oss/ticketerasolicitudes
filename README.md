@@ -75,7 +75,7 @@ Con el mismo directorio y base del portal en un equipo Windows, instala y config
 
 Los servicios Outlook y Graph guardan los avisos en **Borradores** del buzón de atención; nunca los envían automáticamente. El estado `borrador` en Correo de atención solo confirma su preparación. Abre Outlook, revisa destinatario y texto, y pulsa Enviar cuando corresponda. El portal no detecta después ese envío manual.
 
-La confirmación es: «Tu solicitud SOL-0001 fue recibida. La revisaremos pronto.» En Outlook clásico se prepara con Responder sobre la solicitud original, conservando el hilo y el código en el asunto. Conserva el original en Solicitudes hasta que se genere el borrador. Los avisos al equipo y las solicitudes web se preparan como mensajes nuevos. Graph prepara mensajes nuevos con el código del ticket.
+La confirmación es: «Tu solicitud SOL-0001 fue recibida. La revisaremos pronto.» En Outlook clásico se prepara con Responder sobre la solicitud original, conservando el asunto y el hilo originales (el código se incluye en el cuerpo). Conserva el original en Solicitudes hasta que se genere el borrador. Graph también crea una respuesta real con createReply. Para solicitudes recibidas por correo no se genera un segundo borrador dirigido al propio buzón. Las solicitudes web que todavía no tienen un correo recibido se preparan como mensajes nuevos.
 
 Los avisos pendientes anteriores también pasarán a Borradores. Si ocurre un error, revisa Borradores antes de reencolar para evitar duplicados. Detén el lector anterior antes de actualizar y reinícialo después: un proceso antiguo seguirá usando el comportamiento anterior.
 
@@ -154,3 +154,11 @@ Si usas una copia instalada con Git en Windows, puedes iniciar `iniciar_actualiz
 El actualizador solo sigue el repositorio oficial y la rama `main`, no sobrescribe cambios locales ni hace resets. Si detecta cambios en dependencias o en el propio actualizador, pide actualizar e instalar/reiniciar una vez de forma manual. Necesita Git y conexión a GitHub. Los cambios de una propuesta llegan después de incorporarla a `main`. Una recarga por sí sola no descarga archivos de GitHub.
 
 Para que las actualizaciones funcionen sin tener la PC encendida, se necesita alojar el portal con almacenamiento persistente y despliegue automático. La conexión Outlook clásico sigue dependiendo del equipo Windows; Graph permite que el correo funcione desde un servidor.
+
+## Borrador como respuesta al correo recibido
+
+Outlook clásico usa Responder sobre el original, conserva su asunto, destinatarios y contenido citado, y agrega arriba el texto de confirmación o respuesta. Microsoft Graph usa createReply con el mismo objetivo. Ambos guardan el borrador sin enviarlo. Si el original no se encuentra, el aviso queda para revisar y no se sustituye por un mensaje nuevo.
+
+Se registra la conversación del buzón para reconocer respuestas posteriores aunque el asunto original no incluya [SOL-0001]. Los permisos del supervisor siguen validándose. Los correos ya importados registran su conversación al revisarse de nuevo, sin duplicar tickets. Conserva el original en Solicitudes mientras Outlook prepara el borrador. Los borradores creados con versiones anteriores no se modifican ni eliminan automáticamente.
+
+Después de actualizar, reinicia iniciar_correo.bat: el actualizador del portal no reinicia el lector de Outlook. Prueba con una solicitud nueva para comprobar el asunto y el mensaje citado antes de enviarlo manualmente.
