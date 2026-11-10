@@ -16,7 +16,7 @@ from servidor_sesion import crear_app
 
 
 def url_publica(puerto):
-    return os.getenv("PORTAL_URL", "").strip().rstrip("/") or f"http://localhost:{puerto}"
+    return (os.getenv("PORTAL_URL", "").strip() or os.getenv("RENDER_EXTERNAL_URL", "").strip()).rstrip("/") or f"http://localhost:{puerto}"
 
 
 def comprobar_puertos(puerto, interno):
@@ -96,6 +96,7 @@ async def main():
 
 
 if __name__ == "__main__":
+    signal.signal(signal.SIGTERM, signal.default_int_handler)
     if hasattr(signal, "SIGBREAK"):
         def interrumpir(_signum, _frame):
             raise KeyboardInterrupt

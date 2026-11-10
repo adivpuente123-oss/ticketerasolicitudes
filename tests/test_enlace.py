@@ -13,10 +13,16 @@ from actualizador import adquirir_bloqueo, iniciar_portal
 
 class EnlaceTests(unittest.TestCase):
     def test_url_publica_fija_o_dominio_configurado(self):
-        with patch.dict(os.environ, {'PORTAL_URL': ''}):
+        with patch.dict(os.environ, {'PORTAL_URL': '', 'RENDER_EXTERNAL_URL': ''}):
             self.assertEqual(url_publica(8502), 'http://localhost:8502')
         with patch.dict(os.environ, {'PORTAL_URL': 'https://solicitudes.example.com/'}):
             self.assertEqual(url_publica(8502), 'https://solicitudes.example.com')
+
+    def test_render_usa_url_asignada_y_prioriza_dominio_propio(self):
+        with patch.dict(os.environ, {'PORTAL_URL': '', 'RENDER_EXTERNAL_URL': 'https://ticketera.onrender.com/'}):
+            self.assertEqual(url_publica(10000), 'https://ticketera.onrender.com')
+        with patch.dict(os.environ, {'PORTAL_URL': 'https://tickets.example.com', 'RENDER_EXTERNAL_URL': 'https://ticketera.onrender.com'}):
+            self.assertEqual(url_publica(10000), 'https://tickets.example.com')
 
     def test_no_anuncia_url_interna_y_conserva_errores(self):
         self.assertFalse(linea_visible('  URL: http://127.0.0.1:8503'))
