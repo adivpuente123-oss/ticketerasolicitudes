@@ -191,3 +191,27 @@ button[kind="primary"],button[kind="primaryFormSubmit"]{background:linear-gradie
 .stApp .mig,.stApp .mig .yo,.stApp .live-status{font-size:13px}
 .stApp [class*="st-key-ticket_row_"]{padding:11px 0}
 @media(max-width:767px){.stApp .summary-card strong{font-size:27px}.stApp .summary-card small{font-size:12px}.stApp .st-key-solicitudes_grid{min-width:600px}}
+
+/* Cabecera en una sola línea y superficies con contraste */
+.stApp{background:radial-gradient(ellipse at 100% 0%,#e2eaf6 0%,transparent 55%),#edf1f7}
+.block-container{padding-top:3.3rem}
+.st-key-topbar{border-bottom:1px solid #cad5e5;padding:0 0 6px;margin-bottom:4px}
+.st-key-topbar [data-testid="stHorizontalBlock"]{flex-wrap:nowrap!important;gap:12px}
+.st-key-topbar [data-testid="stColumn"]{min-width:0!important}
+.st-key-topbar [data-testid="stColumn"]:last-child{flex:0 0 48px!important;min-width:48px!important}
+.topbar-path{display:flex;align-items:center;gap:10px;min-height:44px;color:#64758e;font-size:13px;line-height:1.4}
+.topbar-path strong{color:#243d60;font-weight:600}.path-divider{color:#98a6bb}
+.online-dot{width:7px;height:7px;background:#229b80;border-radius:50%;box-shadow:0 0 0 4px #229b8010;flex:none;margin-right:2px}
+.stApp .st-key-campana_notificaciones .notification-badge{top:0;right:0}
+.stApp .summary-card{border:1px solid #c8d3e3;border-top:3px solid #d59a32;box-shadow:0 5px 16px #243c5c0c;background:#fff}
+.stApp .summary-card.approved{border-top-color:#239a7d}.stApp .summary-card.rejected{border-top-color:#d65a72}
+.stApp .summary-icon{display:grid;place-items:center;width:30px;height:30px;border-radius:9px;background:#fff4d8;color:#9b6709;font-size:21px}
+.stApp .summary-card.approved .summary-icon{background:#e2f6ed;color:#168465}.stApp .summary-card.rejected .summary-icon{background:#fde9ed;color:#bf405a}
+.stApp .st-key-listado_panel{border:1px solid #bdccdf;box-shadow:0 7px 22px #243c5c0c;background:#fff}
+.stApp .sk,.stApp .kp,.stApp [class*="st-key-card_"],.stApp [data-testid="stMetric"]{border-color:#c5d2e3;box-shadow:0 5px 15px #243c5c0b;background:#fff}
+.stApp .st-key-listado_panel [data-testid="stTextInputRootElement"]{border:1px solid #d0dcec!important;background:#f1f5fa!important}
+.stApp .st-key-solicitudes_cabecera{background:#f5f7fb;border-bottom:1px solid #d5dfed;padding-left:8px;padding-right:8px;border-radius:8px 8px 0 0}
+.stApp [class*="st-key-ticket_row_"]{border-bottom-color:#e0e6ef;padding-left:8px;padding-right:8px}
+.stApp [class*="st-key-ticket_row_"]:hover{background:#eef4fc}
+@media(max-width:767px){.block-container{padding-top:3.4rem}.topbar-path{font-size:12px;gap:7px}.summary-card{border-radius:13px}.st-key-topbar{margin-bottom:0}}
+.st-key-topbar,.st-key-topbar .st-key-campana_notificaciones{gap:0!important}
