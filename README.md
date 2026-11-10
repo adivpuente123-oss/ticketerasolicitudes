@@ -144,3 +144,13 @@ python src/administrar_usuarios.py editar 3 --cambiar-clave
 ```
 
 El último comando pide la contraseña dos veces de forma oculta; no la escribas como argumento ni en archivos Python. También admite `--nombre`, `--rol`, `--activar` y `--desactivar`. Necesita acceso al archivo de base de datos del servidor: usa solo la terminal de administración autorizada. Los cambios aparecen en la aplicación al actualizarla. Para despliegues Docker ejecuta la herramienta dentro del contenedor del portal para usar el mismo volumen. No edites `clave_hash` a mano ni guardes usuarios reales como constantes en GitHub.
+
+## Letras más legibles y actualización desde la PC
+
+Se aumentaron los tamaños de lectura de la tabla, estados, filtros, botones, menú e indicadores, conservando el diseño compacto.
+
+Si usas una copia instalada con Git en Windows, puedes iniciar `iniciar_actualizacion_automatica.bat` en lugar del lanzador habitual. Cierra primero la instancia anterior del portal. Deja abierta esta única ventana: revisa `origin/main` cada 60 segundos y actualiza y reinicia el portal cuando encuentra cambios compatibles. Después recarga el navegador; se conservan la base de datos y las sesiones vigentes. El lector de Outlook clásico, si se usa, sigue en su ventana habitual y debe reiniciarse si una actualización cambia su código.
+
+El actualizador solo sigue el repositorio oficial y la rama `main`, no sobrescribe cambios locales ni hace resets. Si detecta cambios en dependencias o en el propio actualizador, pide actualizar e instalar/reiniciar una vez de forma manual. Necesita Git y conexión a GitHub. Los cambios de una propuesta llegan después de incorporarla a `main`. Una recarga por sí sola no descarga archivos de GitHub.
+
+Para que las actualizaciones funcionen sin tener la PC encendida, se necesita alojar el portal con almacenamiento persistente y despliegue automático. La conexión Outlook clásico sigue dependiendo del equipo Windows; Graph permite que el correo funcione desde un servidor.
