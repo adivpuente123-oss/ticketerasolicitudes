@@ -15,7 +15,7 @@ import streamlit as st
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 import db
 from correo import crear_ticket_desde_correo
-from config import CARTERAS, CONCLUSIONES, CORRESPONDE, ESTADOS_TICKET, TIPOS_CONSULTA
+from config import CARTERAS, CONCLUSIONES, CORRESPONDE, ESTADOS_TICKET, TIPOS_CONSULTA, DIAS_ALERTA_PENDIENTE
 from estilos_plataforma import (CSS, cabecera, cabecera_tabla, esc, fila_html, kpi, logo_y, mascara, nav_item, numero, acceso_visual, fondo_acceso, ticket_resumen)
 
 st.set_page_config(page_title="Plataforma de solicitudes", initial_sidebar_state="expanded", layout="wide")
@@ -249,15 +249,20 @@ def render_tabla(v, modo, al_abrir):
         st.markdown('<div class="vacio">No hay solicitudes con estos filtros.<br>Prueba con otro estado o una búsqueda diferente.</div>', unsafe_allow_html=True)
     with st.container(key="solicitudes_grid"):
         with st.container(key="solicitudes_cabecera"):
-            columnas = st.columns([1.2, 2.6, 1.6, .45, .45], vertical_alignment="center")
-            for col, texto in zip(columnas, ["Ticket", "Supervisor" if modo == "bo" else "Solicitud", "Estado", "", ""]):
+            columnas = st.columns([1.15, 2.15, 1, 1.5, 1.2, .45, .45], vertical_alignment="center")
+            for col, texto in zip(columnas, ["Ticket", "Supervisor / consulta" if modo == "bo" else "Solicitud", "Cartera", "Estado", "Solicitada", "", ""]):
                 col.caption(texto)
-        for _, t in v.iloc[ini:fin].iterrows():
-            with st.container(key=f"ticket_row_{int(t['id'])}"):
-                codigo, asesor, estado_col, abrir_col, borrar_col = st.columns([1.2, 2.6, 1.6, .45, .45], vertical_alignment="center")
-                codigo.markdown(f'<span class="table-code">{esc(t["codigo"])}</span>', unsafe_allow_html=True)
+        for row_index, (_, t) in enumerate(v.iloc[ini:fin].iterrows()):
+            with st.container(key=f"ticket_row_{int(t['id'])}_{'odd' if row_index % 2 else 'even'}"):
+                codigo, asesor, cartera_col, estado_col, fecha_col, abrir_col, borrar_col = st.columns([1.15, 2.15, 1, 1.5, 1.2, .45, .45], vertical_alignment="center")
+                codigo.markdown(f'<span class="table-code">{esc(t["codigo"])}</span><span class="table-origin">{esc({"web":"Web", "correo":"Correo", "excel":"Excel"}.get(t["origen"], t["origen"]))}</span>', unsafe_allow_html=True)
                 nombre = str(t["supervisor"] or "Sin usuario") if modo == "bo" else (t["tipo_consulta"] or "Solicitud")
-                asesor.markdown(f'<div class="table-person">{esc(nombre.title() if modo == "bo" else nombre)}<small>{esc(t["cartera"])} · {esc(t["tipo_consulta"] or "Por completar") if modo == "bo" else esc(fecha_txt(t["fecha_solicitud"]))}</small></div>', unsafe_allow_html=True)
+                asesor.markdown(f'<div class="table-person">{esc(nombre.title() if modo == "bo" else nombre)}<small>{esc(t["tipo_consulta"] or "Por completar") if modo == "bo" else esc(mascara(t["cuenta"]))}</small></div>', unsafe_allow_html=True)
+                cartera_col.markdown(f'<span class="table-portfolio">{esc(t["cartera"])}</span>', unsafe_allow_html=True)
+                dias = int(t["dias"]) if pd.notna(t["dias"]) else None
+                tiempo = "Atendida" if dias is None else "Hoy" if dias == 0 else f"{dias} días abierta"
+                demora = dias is not None and dias > DIAS_ALERTA_PENDIENTE
+                fecha_col.markdown(f'<div class="table-date">{esc(fecha_txt(t["fecha_solicitud"]))}<small class="{"overdue" if demora else ""}">{tiempo}</small></div>', unsafe_allow_html=True)
                 estado = t["estado"]
                 clase, etiqueta = {"Recibida": ("pending", "Pendiente"), "Enviada a verificar": ("review", "En verificación"), "Respondida": ("approved", "Respondida")}[estado]
                 if estado == "Respondida" and t["conclusion"]:
@@ -289,37 +294,71 @@ def barra_filtros(prefijo):
     return buscar, estado, cartera, orden
 
 
+def limpiar_filtros_solicitudes():
+    for clave, valor in {"bo_q": "", "bo_estado": "Todos los estados", "bo_cartera": "Todas", "bo_supervisor": 0, "bo_periodo": "Todo el historial", "bo_orden": "Más antiguas primero", "bo_demora": False}.items():
+        st.session_state[clave] = valor
+    for clave in ("bo_desde", "bo_hasta"):
+        st.session_state.pop(clave, None)
+    reiniciar_pag()
+
+
 @st.fragment(run_every="5s")
 def pagina_inicio(u):
     if not acceso_vigente(u):
         return
-    titulo_pagina("Panel de solicitudes", "Administración y seguimiento de solicitudes")
     df = db.tickets_df()
     df["dias"] = dias_abierto(df)
-    pendientes = int((df["estado"] != "Respondida").sum())
-    aprobadas = int(((df["estado"] == "Respondida") & (df["conclusion"] == "PROCEDENTE")).sum())
-    rechazadas = int(((df["estado"] == "Respondida") & (df["conclusion"] == "IMPROCEDENTE")).sum())
+    datos = [
+        ("pending", "◷", int((df["estado"] == "Recibida").sum()), "Por atender", "Solicitudes recién recibidas"),
+        ("review", "↗", int((df["estado"] == "Enviada a verificar").sum()), "En verificación", "En seguimiento con la entidad"),
+        ("approved", "✓", int((df["estado"] == "Respondida").sum()), "Respondidas", "Atenciones completadas"),
+        ("rejected", "!", int((df["dias"] > DIAS_ALERTA_PENDIENTE).sum()), "Con demora", f"Abiertas más de {DIAS_ALERTA_PENDIENTE} días"),
+    ]
     st.markdown('<div class="summary-grid">' + ''.join(
-        f'<div class="summary-card {clase}"><span class="summary-icon">{icono}</span><strong>{valor}</strong><small>{etiqueta}</small></div>'
-        for clase, icono, valor, etiqueta in [("pending", "◷", pendientes, "Pendientes"), ("approved", "✓", aprobadas, "Aprobadas"), ("rejected", "×", rechazadas, "Rechazadas")]) + '</div>', unsafe_allow_html=True)
-    with st.container(key="listado_panel"):
-        cabecera_panel = st.container()
-        buscar_col, estado_col = st.columns([4, 1])
-        buscar = buscar_col.text_input("Buscar solicitudes", placeholder="Buscar solicitudes", label_visibility="collapsed", key="bo_q", on_change=reiniciar_pag)
-        estado = estado_col.selectbox("Estado", FILTRO_ESTADO, label_visibility="collapsed", key="bo_estado", on_change=reiniciar_pag,
-                                      format_func=lambda x: "Todas" if x == "Todos los estados" else x)
-        with st.expander("Más filtros"):
+        f'<div class="summary-card {clase}"><div class="summary-card-top"><span>{etiqueta}</span><span class="summary-icon">{icono}</span></div><strong>{valor}</strong><small>{detalle}</small></div>'
+        for clase, icono, valor, etiqueta, detalle in datos) + '</div>', unsafe_allow_html=True)
+    with st.container(key="filtros_panel"):
+        c1, c2, c3, c4 = st.columns([2.5, 1.3, 1, 1.3])
+        buscar = c1.text_input("Buscar solicitud", placeholder="Código, documento, cuenta o supervisor", key="bo_q", on_change=reiniciar_pag)
+        estado = c2.selectbox("Estado", FILTRO_ESTADO, key="bo_estado", on_change=reiniciar_pag,
+                              format_func=lambda x: "Todos los estados" if x == "Todos los estados" else x)
+        cartera = c3.selectbox("Cartera", ["Todas"] + CARTERAS, key="bo_cartera", on_change=reiniciar_pag)
+        nombres = {int(r.supervisor_id): str(r.supervisor or "Sin usuario").title() for r in df.itertuples() if pd.notna(r.supervisor_id)}
+        supervisor = c4.selectbox("Supervisor", [0] + sorted(nombres, key=lambda x: nombres[x]), format_func=lambda x: "Todos los supervisores" if x == 0 else nombres[x], key="bo_supervisor", on_change=reiniciar_pag)
+        c1, c2, c3 = st.columns([1.4, 1.4, 2.8], vertical_alignment="bottom")
+        periodo = c1.selectbox("Período de solicitud", ["Todo el historial", "Este mes", "Últimos 7 días", "Últimos 30 días", "Personalizado"], key="bo_periodo", on_change=reiniciar_pag)
+        orden = c2.selectbox("Orden", ["Más antiguas primero", "Más recientes primero"], key="bo_orden", on_change=reiniciar_pag)
+        demora_col, limpiar_col = c3.columns([1.4, 1], vertical_alignment="center")
+        solo_demora = demora_col.checkbox("Solo con demora", help=f"Solicitudes abiertas hace más de {DIAS_ALERTA_PENDIENTE} días", key="bo_demora", on_change=reiniciar_pag)
+        limpiar_col.button("Limpiar filtros", icon=":material/filter_alt_off:", key="bo_limpiar", on_click=limpiar_filtros_solicitudes)
+        desde = hasta = None
+        hoy = pd.Timestamp.now(tz="America/Lima").date()
+        if periodo == "Personalizado":
             c1, c2 = st.columns(2)
-            cartera = c1.selectbox("Cartera", ["Todas"] + CARTERAS, key="bo_cartera", on_change=reiniciar_pag)
-            orden = c2.selectbox("Orden", ["Más antiguas primero", "Más recientes primero"], key="bo_orden", on_change=reiniciar_pag)
+            desde = c1.date_input("Desde", value=hoy.replace(day=1), key="bo_desde", on_change=reiniciar_pag)
+            hasta = c2.date_input("Hasta", value=hoy, key="bo_hasta", on_change=reiniciar_pag)
         v = filtrar(df, buscar, estado, cartera, orden)
-        with cabecera_panel:
-            titulo, exportar_col, nueva = st.columns([4, 1.4, 1.4], vertical_alignment="center")
-            titulo.markdown('<h2 class="panel-heading">Gestión de solicitudes</h2>', unsafe_allow_html=True)
-            exportar_col.download_button("Exportar reporte", exportar(v), "solicitudes.csv", "text/csv", key="exp_bo", icon=":material/file_download:")
-            nueva.button("Nueva solicitud", key="btn_nueva", on_click=cambiar_pagina, args=("Nueva solicitud",), icon=":material/add:")
+        if supervisor:
+            v = v[v["supervisor_id"] == supervisor]
+        hoy = pd.Timestamp.now(tz="America/Lima").date()
+        if periodo == "Este mes":
+            desde, hasta = hoy.replace(day=1), hoy
+        elif periodo in ("Últimos 7 días", "Últimos 30 días"):
+            desde, hasta = hoy - pd.Timedelta(days=6 if periodo == "Últimos 7 días" else 29), hoy
+        if desde is not None and hasta is not None:
+            fechas = pd.to_datetime(v["fecha_solicitud"], errors="coerce")
+            v = v[(fechas >= pd.Timestamp(desde)) & (fechas <= pd.Timestamp(hasta))]
+            if desde > hasta:
+                st.warning("La fecha Desde debe ser anterior o igual a Hasta.")
+        if solo_demora:
+            v = v[v["dias"] > DIAS_ALERTA_PENDIENTE]
+    with st.container(key="listado_panel"):
+        titulo, exportar_col, nueva = st.columns([4, 1.5, 1.5], vertical_alignment="center")
+        titulo.markdown(f'<h2 class="panel-heading">Bandeja de solicitudes <span class="result-count">{len(v)} de {len(df)}</span></h2>', unsafe_allow_html=True)
+        exportar_col.download_button("Exportar reporte", exportar(v), "solicitudes.csv", "text/csv", key="exp_bo", icon=":material/file_download:")
+        nueva.button("Nueva solicitud", type="primary", key="btn_nueva", on_click=cambiar_pagina, args=("Nueva solicitud",), icon=":material/add:")
         render_tabla(v, "bo", abrir_en_gestionar)
-    st.caption("Actualización automática cada 5 segundos · Las aprobaciones y rechazos corresponden a la conclusión de las solicitudes respondidas.")
+    st.caption("Vista actualizada cada 5 segundos · Los indicadores resumen todo el historial; la tabla refleja los filtros seleccionados.")
 
 
 
@@ -660,9 +699,10 @@ def centro_notificaciones(u):
             st.toast(texto, icon=":material/notifications_active:", duration="long")
     st.session_state[clave] = ultimo
     with st.container(key="topbar"):
-        estado, campana = st.columns([12, 1], vertical_alignment="center")
+        estado, revision, campana = st.columns([7, 4, .7], vertical_alignment="center")
         pagina_actual = NAV_INFO.get(st.session_state.get("pagina_pf", "Inicio"), ("", "Solicitudes"))[1]
-        estado.markdown(f'<div class="topbar-path"><span class="online-dot" title="Portal en línea" aria-label="Portal en línea"></span><span>Plataforma</span><span class="path-divider">/</span><strong>{esc(pagina_actual)}</strong></div>', unsafe_allow_html=True)
+        estado.markdown(f'<div class="topbar-path"><h1>{esc(pagina_actual)}</h1></div>', unsafe_allow_html=True)
+        revision.markdown(f'<div class="header-sync"><span class="online-dot"></span> En línea <span class="sync-time">· Última revisión {pd.Timestamp.now(tz="America/Lima").strftime("%H:%M:%S")}</span></div>', unsafe_allow_html=True)
         with campana.container(key="campana_notificaciones"):
             if pendientes:
                 contador = str(pendientes) if pendientes < 100 else "99+"
@@ -713,14 +753,19 @@ if st.session_state.get("pagina_pf") not in paginas:
 pagina = st.session_state["pagina_pf"]
 
 with st.sidebar:
-    st.markdown(logo_y(), unsafe_allow_html=True)
-    st.markdown('<div class="sidebar-label">ESPACIO DE TRABAJO</div>', unsafe_allow_html=True)
+    st.markdown(logo_y().replace("<strong>Solicitudes</strong>", "<strong>Gestión de<br>solicitudes</strong>"), unsafe_allow_html=True)
     iconos = {"solicitudes":"view_list", "gestionar":"tune", "nueva":"add_circle", "correo":"mail", "usuarios":"group"}
-    for i, p in enumerate(paginas):
-        icono, titulo = NAV_INFO[p]
-        st.button(titulo, key=f"navb_{i}", icon=f":material/{iconos[icono]}:",
-                  type="primary" if p == pagina else "secondary", use_container_width=True,
-                  on_click=cambiar_pagina, args=(p,))
+    grupos = [("ATENCIÓN", ["Inicio", "Mis solicitudes", "Nueva solicitud"]), ("SEGUIMIENTO", ["Gestionar", "Correo"]), ("ADMINISTRACIÓN", ["Usuarios", "Prueba de correo"])]
+    for grupo, opciones in grupos:
+        visibles = [p for p in opciones if p in paginas]
+        if not visibles:
+            continue
+        st.markdown(f'<div class="sidebar-label">{grupo}</div>', unsafe_allow_html=True)
+        for p in visibles:
+            icono, titulo = NAV_INFO[p]
+            st.button(titulo, key=f"navb_{paginas.index(p)}", icon=f":material/{iconos[icono]}:",
+                      type="primary" if p == pagina else "secondary", use_container_width=True,
+                      on_click=cambiar_pagina, args=(p,))
     st.divider()
     st.markdown(f'<div class="sidebar-profile">{esc(usuario["nombre"].title())}<small>{"Equipo de atención" if usuario["rol"] == "backoffice" else "Supervisor"}</small></div>', unsafe_allow_html=True)
     st.button("Cerrar sesión", key="navb_salir", icon=":material/logout:", use_container_width=True, on_click=cerrar_sesion)

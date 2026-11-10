@@ -139,9 +139,41 @@ class UITests(unittest.TestCase):
         db.actualizar_ticket(self.tid, self.admin, {"estado": "Respondida", "conclusion": "PROCEDENTE"}, "Respondida")
         at = self.app(self.admin, 'Inicio')
         self.assertEqual(len(at.exception), 0)
-        self.assertTrue(any('summary-grid' in m.value and 'Aprobadas' in m.value for m in at.markdown))
+        self.assertTrue(any('summary-grid' in m.value and 'En verificación' in m.value for m in at.markdown))
         at.text_input(key='bo_q').set_value('Consulta propia').run()
         self.assertEqual(len([b for b in at.button if str(b.key).startswith('abrir_')]), 1)
         at.selectbox(key='bo_estado').select('Recibida').run()
         self.assertEqual(len([b for b in at.button if str(b.key).startswith('abrir_')]), 0)
+        self.assertEqual(len(at.exception), 0)
+
+    def test_filtros_de_supervisor_periodo_y_demora(self):
+        from datetime import date, timedelta
+        vieja, _ = db.crear_ticket(self.sup, 'IBK', 'Solicitud antigua', '12345678', '00123456', fecha_solicitud=(date.today()-timedelta(days=45)).isoformat())
+        at = self.app(self.admin, 'Inicio')
+        at.selectbox(key='bo_supervisor').select(self.sup).run()
+        self.assertEqual(len([b for b in at.button if str(b.key).startswith('abrir_')]), 2)
+        at.checkbox(key='bo_demora').check().run()
+        self.assertEqual(len([b for b in at.button if str(b.key).startswith('abrir_')]), 1)
+        self.assertTrue(any(b.key == f'abrir_{vieja}' for b in at.button))
+        at.selectbox(key='bo_periodo').select('Últimos 7 días').run()
+        self.assertEqual(len([b for b in at.button if str(b.key).startswith('abrir_')]), 0)
+        self.assertEqual(len(at.exception), 0)
+
+    def test_periodo_personalizado_invalido_no_falla(self):
+        from datetime import date, timedelta
+        at = self.app(self.admin, 'Inicio')
+        at.selectbox(key='bo_periodo').select('Personalizado').run()
+        at.date_input(key='bo_desde').set_value(date.today()+timedelta(days=1))
+        at.date_input(key='bo_hasta').set_value(date.today())
+        at.run()
+        self.assertTrue(any('Desde' in w.value for w in at.warning))
+        self.assertEqual(len(at.exception), 0)
+
+    def test_limpiar_filtros_restaura_la_bandeja(self):
+        at = self.app(self.admin, 'Inicio')
+        at.text_input(key='bo_q').set_value('inexistente').run()
+        self.assertEqual(len([b for b in at.button if str(b.key).startswith('abrir_')]), 0)
+        at.button(key='bo_limpiar').click().run()
+        self.assertEqual(at.text_input(key='bo_q').value, '')
+        self.assertEqual(len([b for b in at.button if str(b.key).startswith('abrir_')]), 2)
         self.assertEqual(len(at.exception), 0)

@@ -112,6 +112,12 @@ python -m compileall -q app src servidor.py
 
 Las pruebas usan datos ficticios y adaptadores simulados. No sustituyen la prueba de entrega real con un buzón autorizado. Docker/HTTPS requieren validación en el servidor elegido.
 
+## Panel de operaciones
+
+La interfaz agrupa la navegación en Atención, Seguimiento y Administración, con cabecera compacta y hora de revisión en Lima. Los indicadores muestran recibidas por atender, enviadas a verificar, respondidas y solicitudes abiertas por encima del umbral DIAS_ALERTA_PENDIENTE. Resumen y tabla usan datos reales; los indicadores corresponden al historial completo.
+
+La bandeja incorpora filtros por texto, estado, cartera, supervisor, período y demora, con un botón para limpiarlos. Los períodos incluyen el mes actual, últimos 7/30 días y rango personalizado; los filtros afectan a la exportación CSV. La tabla distingue ticket, supervisor/consulta, cartera, estado, fecha y antigüedad, conservando las acciones de detalle y borrado con confirmación. En móvil la tabla se desplaza dentro de su panel y los indicadores/filtros se distribuyen en dos columnas.
+
 ## Interfaz corporativa
 El portal incluye acceso con fotografía arquitectónica propia, navegación con etiquetas e iconos vectoriales, tarjetas adaptables, estados legibles y controles visibles. El tema se define en app/portal.css y .streamlit/config.toml. Los recursos visuales se guardan en app/assets; no dependen de páginas externas.
 
