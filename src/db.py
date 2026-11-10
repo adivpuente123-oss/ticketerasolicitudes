@@ -306,7 +306,7 @@ def _notificar(con, tid, asunto, texto, avisar_equipo=False):
     cuerpo = f"{t['codigo']} · {t['estado']}\n\n{texto}\n\nResponde conservando [{t['codigo']}] en el asunto para continuar la conversación."
     if asunto == "Solicitud recibida":
         cuerpo = texto
-    url = os.getenv("PORTAL_URL", "").strip()
+    url = (os.getenv("PORTAL_URL", "").strip() or os.getenv("RENDER_EXTERNAL_URL", "").strip()).rstrip("/")
     if url and asunto != "Solicitud recibida":
         cuerpo += f"\nConsulta tus solicitudes en {url}"
     for correo in destinatarios:

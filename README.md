@@ -20,6 +20,23 @@ Abre http://localhost:8502. Crea el administrador con tu correo `adiv.puente@goe
 
 No hay usuarios ni contraseñas precargados. No se incluyen datos reales.
 
+## Publicar sin depender de tu PC
+
+Se incluye [render.yaml](render.yaml) para Render: un servicio Python de pago, una instancia con 1 CPU/2 GB y un disco persistente de 1 GB. Preparar este archivo no contrata alojamiento ni genera una URL real. Revisa el precio del servicio y del disco en Render antes de confirmar su creación.
+
+1. Crea tu cuenta en https://render.com y conecta GitHub autorizando este repositorio.
+2. Tras incorporar esta configuración a main, elige **New → Blueprint** y selecciona el repositorio. Revisa el servicio y el coste antes de aplicarlo.
+3. Render instalará las dependencias y ejecutará servidor.py. El portal quedará en la URL HTTPS que te asigne Render. La aplicación usa RENDER_EXTERNAL_URL automáticamente; para un dominio propio configúralo en Render y define PORTAL_URL con ese dominio.
+4. Para una instalación vacía, consulta SETUP_TOKEN en las variables del servicio de Render e introdúcelo en la pantalla de instalación para crear al administrador. No publiques ese código ni lo compartas en el chat.
+5. Para conservar tus usuarios y solicitudes actuales, migra primero una copia consistente de tu base local al archivo /var/data/plataforma.db del disco. Los archivos de tu PC no se trasladan por conectar GitHub. Esa copia contiene datos privados: no la subas al repositorio. Planifica la transferencia después de crear el servicio y antes de registrar actividad real. Detén las escrituras y coordina el reemplazo con el portal detenido; no sobrescribas una base SQLite en uso ni copies su archivo mientras cambia. Los hashes de contraseña existentes permiten conservar las contraseñas.
+6. Las actualizaciones se despliegan desde main cuando las comprobaciones de GitHub pasan. Mantén la misma URL y recarga la página después del despliegue. Render gestiona los procesos: no ejecutes los .bat ni el actualizador local en ese alojamiento. El disco conserva la base en los despliegues. No elimines el disco y conserva copias consistentes de SQLite.
+
+El servicio empieza con el correo desactivado. Para recibir y preparar borradores con la PC apagada, TI debe autorizar Microsoft Graph según la sección Microsoft 365 para servidor. Guarda MS_TENANT_ID, MS_CLIENT_ID y MS_CLIENT_SECRET en las variables privadas de Render y activa CORREO_MODO=graph después de verificar los permisos y el flujo de respuesta al original. Incorpora también la corrección de borradores de respuesta antes de activar el correo. Outlook clásico en tu PC no sustituye esa conexión de servidor.
+
+No ejecutes a la vez la copia local y la alojada contra el mismo buzón: cada una tendría su propia base y podría procesar el mismo correo. El servicio con disco persistente necesita una sola instancia; puede haber una breve interrupción al desplegar. Verifica el primer despliegue y la persistencia con datos ficticios antes de migrar el uso del equipo.
+
+Referencias: [BluePrint de Render](https://render.com/docs/blueprint-spec), [discos persistentes](https://render.com/docs/disks) y [variables del entorno](https://render.com/docs/environment-variables).
+
 ## Publicar en Internet
 
 Esta aplicación necesita un servidor de Python con almacenamiento persistente. No funciona como página estática en GitHub Pages. El archivo Dockerfile y compose.yaml permiten desplegarla en un servidor Linux con Docker Compose, sin Outlook de escritorio.
