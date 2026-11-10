@@ -210,3 +210,29 @@ class UITests(unittest.TestCase):
         self.assertEqual(at.text_input(key='nueva_asunto').value, '')
         with db.conexion() as con:
             self.assertEqual(con.execute("SELECT numero_expediente FROM tickets ORDER BY id DESC LIMIT 1").fetchone()[0], '123-2026')
+
+    def test_gestion_guarda_propiedades_y_vuelve_al_listado(self):
+        at = self.app(self.admin, 'Gestionar')
+        tid = at.selectbox(key='ticket_sel').value
+        at.selectbox(key=f'prop_prioridad_{tid}').select('Alta')
+        next(b for b in at.button if b.label == 'Guardar cambios').click().run()
+        self.assertEqual(db.ticket(tid)['prioridad'], 'Alta')
+        at.button(key='gestion_volver').click().run()
+        self.assertTrue(any(b.key == 'btn_nueva' for b in at.button))
+        self.assertEqual(len(at.exception), 0)
+
+    def test_notas_internas_solo_para_equipo_y_respuesta_publica(self):
+        at = self.app(self.admin, 'Gestionar')
+        tid = at.selectbox(key='ticket_sel').value
+        at.text_area(key=f'nota_texto_{tid}').set_value('NOTA PRIVADA DEL EQUIPO')
+        next(b for b in at.button if b.label == 'Guardar nota interna').click().run()
+        self.assertEqual(len(db.notas_ticket(tid, self.admin)), 1)
+        at.text_area(key=f'reply_{tid}_0').set_value('Respuesta para el supervisor')
+        next(b for b in at.button if b.label == 'Enviar respuesta').click().run()
+        self.assertEqual(db.mensajes(tid)[0]['cuerpo'], 'Respuesta para el supervisor')
+        self.assertEqual(len(at.exception), 0)
+        propietario = db.ticket(tid)['supervisor_id']
+        sup = self.app(propietario)
+        next(b for b in sup.button if b.label == 'Abrir').click().run()
+        self.assertFalse(any('NOTA PRIVADA DEL EQUIPO' in m.value for m in sup.markdown))
+        self.assertFalse(any(t.label == 'Nota interna' for t in sup.tabs))

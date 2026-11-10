@@ -34,3 +34,5 @@ TIPOS_CONSULTA = ["Canceló con entidad original", "Actualización de centrales"
 ESTADOS_TICKET = ["Recibida", "Enviada a verificar", "Respondida"]
 CONCLUSIONES = ["PROCEDENTE", "IMPROCEDENTE"]      # Respondida puede ser positiva (procedente) o negativa (improcedente)
 CORRESPONDE = ["Alícuota", "Posible alícuota", "No aplica"]
+
+PRIORIDADES = ["Baja", "Media", "Alta", "Urgente"]
