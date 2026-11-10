@@ -3,6 +3,8 @@ import hashlib
 import hmac
 import os
 import sqlite3
+import secrets
+import time
 from contextlib import contextmanager
 from datetime import date, datetime
 
@@ -20,6 +22,12 @@ CREATE TABLE IF NOT EXISTS usuarios (
     activo INTEGER NOT NULL DEFAULT 1,
     creado_en TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+CREATE TABLE IF NOT EXISTS sesiones (
+    huella TEXT PRIMARY KEY,
+    usuario_id INTEGER NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE,
+    expira_en INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ix_sesiones_usuario ON sesiones(usuario_id);
 CREATE TABLE IF NOT EXISTS tickets (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     codigo TEXT UNIQUE,                          -- SOL-0001
@@ -146,6 +154,9 @@ def crear_usuario(nombre, correo, rol, clave=None, activo=1) -> int:
 
 def actualizar_usuario(uid, nombre, correo, rol, activo, clave=None):
     with conexion() as con:
+        anterior = con.execute("SELECT * FROM usuarios WHERE id=?", (uid,)).fetchone()
+        if anterior and (clave or anterior["correo"] != ((correo or "").strip().lower() or None) or anterior["rol"] != rol or not activo):
+            con.execute("DELETE FROM sesiones WHERE usuario_id=?", (uid,))
         con.execute("UPDATE usuarios SET nombre=?, correo=?, rol=?, activo=? WHERE id=?",
                     (nombre.strip().upper(), (correo or "").strip().lower() or None, rol, int(activo), uid))
         if clave:
@@ -369,3 +380,34 @@ def contar_notificaciones(uid):
 def marcar_notificaciones(uid, nid=None):
     with conexion() as con:
         con.execute("UPDATE notificaciones SET leida=1 WHERE usuario_id=?" + (" AND id=?" if nid is not None else ""), (uid, nid) if nid is not None else (uid,))
+
+
+DURACION_SESION = 12 * 60 * 60
+
+
+def crear_sesion(uid):
+    token = secrets.token_urlsafe(32)
+    huella = hashlib.sha256(token.encode()).hexdigest()
+    expira = int(time.time()) + DURACION_SESION
+    with conexion() as con:
+        con.execute("DELETE FROM sesiones WHERE expira_en<=?", (int(time.time()),))
+        u = con.execute("SELECT activo FROM usuarios WHERE id=?", (uid,)).fetchone()
+        if not u or not u["activo"]:
+            raise PermissionError("El usuario no está activo.")
+        con.execute("INSERT INTO sesiones(huella,usuario_id,expira_en) VALUES(?,?,?)", (huella, uid, expira))
+    return token
+
+
+def usuario_por_sesion(token):
+    if not token or not isinstance(token, str) or len(token) > 256:
+        return None
+    with conexion() as con:
+        return con.execute("""SELECT u.* FROM sesiones s JOIN usuarios u ON u.id=s.usuario_id
+            WHERE s.huella=? AND s.expira_en>? AND u.activo=1""",
+            (hashlib.sha256(token.encode()).hexdigest(), int(time.time()))).fetchone()
+
+
+def revocar_sesion(token):
+    if token:
+        with conexion() as con:
+            con.execute("DELETE FROM sesiones WHERE huella=?", (hashlib.sha256(token.encode()).hexdigest(),))
