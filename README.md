@@ -15,7 +15,7 @@ Portal web para supervisores y back office, basado en la aplicación del ZIP ori
 
 ## Prueba local en Windows
 
-Instala Python 3.12. Ejecuta `instalar.bat` y después `iniciar_plataforma.bat`.
+Instala Python 3.12. Ejecuta `instalar.bat` y después `iniciar_plataforma.bat`. Este último inicia el servidor con sesión persistente.
 Abre http://localhost:8502. Crea el administrador con tu correo `adiv.puente@goexpertis.com` y una contraseña propia. En Usuarios crea las cuentas de los supervisores con sus correos.
 
 No hay usuarios ni contraseñas precargados. No se incluyen datos reales.
@@ -122,3 +122,25 @@ La pestaña Solicitudes presenta el listado sin el banner de Centro de atención
 El panel muestra tres indicadores: Pendientes (solicitudes aún no respondidas), Aprobadas (respondidas con conclusión PROCEDENTE) y Rechazadas (respondidas con conclusión IMPROCEDENTE). Una solicitud respondida sin conclusión no cuenta como aprobada ni rechazada.
 
 Gestión de solicitudes reúne buscador, filtro por estado, filtros adicionales y exportación CSV del resultado filtrado. Las filas muestran ticket, supervisor, cartera, consulta y estado con color; el icono del ojo abre el detalle y la papelera conserva la confirmación de borrado. Se mantiene la campana, los permisos y los avisos. En móviles la tabla permite desplazamiento horizontal.
+
+## Sesión persistente y datos de usuarios
+
+Los usuarios, correos y hashes de contraseña se guardan en `db/plataforma.db` (o `RUTA_DB`). Ya persisten al recargar y reiniciar. Conserva esa carpeta al actualizar; Docker utiliza el volumen persistente `tickets`. La contraseña original no se almacena ni se puede consultar: se reemplaza por una nueva desde Usuarios.
+
+Inicia con `iniciar_plataforma.bat`, `iniciar_plataforma_red.bat` o `python servidor.py`. El servidor mantiene una cookie HttpOnly, SameSite=Lax, durante 12 horas y guarda solo la huella del token en la base de datos. Recargar, cerrar y abrir el navegador o reiniciar el portal conserva el acceso durante ese plazo. Cerrar sesión revoca el token. Cambiar correo, contraseña, rol o desactivar un usuario revoca sus sesiones. Eliminarlo también elimina sus sesiones.
+
+Después de actualizar esta versión, detén el portal anterior, ejecuta `instalar.bat` (o `python -m pip install -r requirements.txt`) e inicia el portal de nuevo. El primer acceso requiere ingresar una vez. No uses directamente `streamlit run app/plataforma.py` para el portal: ese comando omite el servidor de cookies y conserva únicamente el acceso temporal para desarrollo.
+
+El puerto público es `PORT` (8502 por defecto); Streamlit queda en 127.0.0.1 en `PORT_INTERNO` (por defecto PORT + 1), que debe estar libre. En local el portal escucha solo en localhost; `iniciar_plataforma_red.bat` permite la red local. En alojamiento, `PORTAL_CLOUD=1` activa cookies Secure y requiere HTTPS, como el Caddy de Docker Compose. Mantén una sola instancia con su base persistente.
+
+### Administrar desde la terminal
+
+Es viable modificar la misma base desde un script, sin editar ni subir contraseñas al código. La herramienta local utiliza la misma `RUTA_DB` que el portal:
+
+```bash
+python src/administrar_usuarios.py listar
+python src/administrar_usuarios.py editar 3 --correo nuevo@ejemplo.com
+python src/administrar_usuarios.py editar 3 --cambiar-clave
+```
+
+El último comando pide la contraseña dos veces de forma oculta; no la escribas como argumento ni en archivos Python. También admite `--nombre`, `--rol`, `--activar` y `--desactivar`. Necesita acceso al archivo de base de datos del servidor: usa solo la terminal de administración autorizada. Los cambios aparecen en la aplicación al actualizarla. Para despliegues Docker ejecuta la herramienta dentro del contenedor del portal para usar el mismo volumen. No edites `clave_hash` a mano ni guardes usuarios reales como constantes en GitHub.

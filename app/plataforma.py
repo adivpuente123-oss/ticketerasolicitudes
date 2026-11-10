@@ -98,6 +98,8 @@ def reiniciar_pag():
 
 
 def cerrar_sesion():
+    if os.getenv("PORTAL_AUTH_HTTP") == "1":
+        db.revocar_sesion(st.context.cookies.get("portal_session"))
     for k in ("usuario", "pagina_pf", "ticket_sel", "_ir_a", "ver_ticket", "pag_tabla"):
         st.session_state.pop(k, None)
 
@@ -147,6 +149,9 @@ def pantalla_acceso():
                             st.error("Ese nombre ya existe como usuario. Usa otro nombre.")
             return
         st.markdown('<h2 class="access-heading">Bienvenido de nuevo.</h2><p class="access-copy">Ingresa con tu correo corporativo para consultar y gestionar tus solicitudes.</p>', unsafe_allow_html=True)
+        if os.getenv("PORTAL_AUTH_HTTP") == "1":
+            st.link_button("Iniciar sesión", "/_portal/login", type="primary", use_container_width=True)
+            return
         with st.form("login"):
             correo = st.text_input("Correo")
             clave = st.text_input("Contraseña", type="password")
@@ -474,7 +479,9 @@ def pagina_gestionar(u):
 
 
 def acceso_vigente(u):
-    actual = db.usuario_por_id(u["id"])
+    actual = db.usuario_por_sesion(st.context.cookies.get("portal_session")) if os.getenv("PORTAL_AUTH_HTTP") == "1" else db.usuario_por_id(u["id"])
+    if actual and actual["id"] != u["id"]:
+        actual = None
     if not actual or not actual["activo"] or actual["rol"] != u["rol"]:
         cerrar_sesion()
         st.rerun(scope="app")
@@ -683,6 +690,12 @@ def centro_notificaciones(u):
 
 
 # ---------- aplicación ----------
+if os.getenv("PORTAL_AUTH_HTTP") == "1":
+    sesion = db.usuario_por_sesion(st.context.cookies.get("portal_session"))
+    if sesion:
+        st.session_state["usuario"] = {k: sesion[k] for k in ("id", "nombre", "correo", "rol")}
+    else:
+        st.session_state.pop("usuario", None)
 usuario = st.session_state.get("usuario")
 if not usuario:
     pantalla_acceso()
