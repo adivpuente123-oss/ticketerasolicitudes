@@ -15,7 +15,8 @@ import streamlit as st
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 import db
 from correo import crear_ticket_desde_correo
-from config import CARTERAS, CONCLUSIONES, CORRESPONDE, ESTADOS_TICKET, TIPOS_CONSULTA, DIAS_ALERTA_PENDIENTE
+from solicitudes import registrar_solicitud, SolicitudDuplicada
+from config import CARTERAS, CONCLUSIONES, CORRESPONDE, ESTADOS_TICKET, TIPOS_CONSULTA, DIAS_ALERTA_PENDIENTE, TIPO_TRANSACCION
 from estilos_plataforma import (CSS, cabecera, cabecera_tabla, esc, fila_html, kpi, logo_y, mascara, nav_item, numero, acceso_visual, fondo_acceso, ticket_resumen)
 
 st.set_page_config(page_title="Plataforma de solicitudes", initial_sidebar_state="expanded", layout="wide")
@@ -85,6 +86,8 @@ def cerrar_detalle():
 
 
 def cambiar_pagina(p):
+    if p == "Nueva solicitud":
+        st.session_state.pop("_solicitud_resultado", None)
     st.session_state["pagina_pf"] = p
     st.session_state.pop("ver_ticket", None)
 
@@ -98,6 +101,9 @@ def reiniciar_pag():
 
 
 def cerrar_sesion():
+    for clave in list(st.session_state):
+        if clave.startswith("nueva_") or clave in ("_reset_nueva", "_solicitud_resultado", "_form_version"):
+            st.session_state.pop(clave, None)
     if os.getenv("PORTAL_AUTH_HTTP") == "1":
         db.revocar_sesion(st.context.cookies.get("portal_session"))
     for k in ("usuario", "pagina_pf", "ticket_sel", "_ir_a", "ver_ticket", "pag_tabla"):
@@ -202,7 +208,7 @@ def filtrar(df, buscar, estado, cartera, orden):
         v = v[v["cartera"] == cartera]
     if buscar and buscar.strip():
         b = buscar.strip().lower()
-        v = v[v[["codigo", "tipo_consulta", "cuenta", "documento", "supervisor", "cartera"]].fillna("").apply(
+        v = v[v[["codigo", "tipo_consulta", "cuenta", "documento", "supervisor", "cartera", "asunto", "nombre_cliente", "numero_expediente"]].fillna("").apply(
             lambda s: s.astype(str).str.lower().str.contains(b, regex=False)).any(axis=1)]
     asc = orden == "Más antiguas primero"
     # las abiertas van primero (son las que hay que atender) y las respondidas al final
@@ -213,7 +219,7 @@ def exportar(v) -> bytes:
     out = pd.DataFrame({"Código": v["codigo"], "Origen": v["origen"], "Supervisor": v["supervisor"], "Cartera": v["cartera"],
                         "Tipo de consulta": v["tipo_consulta"], "Cuenta": v["cuenta"].map(mascara), "Estado": v["estado"],
                         "Solicitada": v["fecha_solicitud"], "Enviada": v["fecha_envio"], "Respondida": v["fecha_respuesta"],
-                        "Conclusión": v["conclusion"], "Días abierta": v["dias"]})
+                        "Conclusión": v["conclusion"], "Días abierta": v["dias"], "Asunto": v["asunto"], "Nombre cliente": v["nombre_cliente"], "Expediente": v["numero_expediente"], "Juzgado": v["juzgado"], "Materia": v["materia"]})
     return out.to_csv(index=False).encode("utf-8-sig")
 
 
@@ -256,8 +262,8 @@ def render_tabla(v, modo, al_abrir):
             with st.container(key=f"ticket_row_{int(t['id'])}_{'odd' if row_index % 2 else 'even'}"):
                 codigo, asesor, cartera_col, estado_col, fecha_col, abrir_col, borrar_col = st.columns([1.15, 2.15, 1, 1.5, 1.2, .45, .45], vertical_alignment="center")
                 codigo.markdown(f'<span class="table-code">{esc(t["codigo"])}</span><span class="table-origin">{esc({"web":"Web", "correo":"Correo", "excel":"Excel"}.get(t["origen"], t["origen"]))}</span>', unsafe_allow_html=True)
-                nombre = str(t["supervisor"] or "Sin usuario") if modo == "bo" else (t["tipo_consulta"] or "Solicitud")
-                asesor.markdown(f'<div class="table-person">{esc(nombre.title() if modo == "bo" else nombre)}<small>{esc(t["tipo_consulta"] or "Por completar") if modo == "bo" else esc(mascara(t["cuenta"]))}</small></div>', unsafe_allow_html=True)
+                nombre = str(t["supervisor"] or "Sin usuario") if modo == "bo" else (t["asunto"] or t["tipo_consulta"] or "Solicitud")
+                asesor.markdown(f'<div class="table-person">{esc(nombre.title() if modo == "bo" else nombre)}<small>{esc(t["asunto"] or t["tipo_consulta"] or "Por completar") if modo == "bo" else esc(mascara(t["cuenta"]))}</small></div>', unsafe_allow_html=True)
                 cartera_col.markdown(f'<span class="table-portfolio">{esc(t["cartera"])}</span>', unsafe_allow_html=True)
                 dias = int(t["dias"]) if pd.notna(t["dias"]) else None
                 tiempo = "Atendida" if dias is None else "Hoy" if dias == 0 else f"{dias} días abierta"
@@ -356,7 +362,9 @@ def pagina_inicio(u):
         titulo, exportar_col, nueva = st.columns([4, 1.5, 1.5], vertical_alignment="center")
         titulo.markdown(f'<h2 class="panel-heading">Bandeja de solicitudes <span class="result-count">{len(v)} de {len(df)}</span></h2>', unsafe_allow_html=True)
         exportar_col.download_button("Exportar reporte", exportar(v), "solicitudes.csv", "text/csv", key="exp_bo", icon=":material/file_download:")
-        nueva.button("Nueva solicitud", type="primary", key="btn_nueva", on_click=cambiar_pagina, args=("Nueva solicitud",), icon=":material/add:")
+        if nueva.button("Nueva solicitud", type="primary", key="btn_nueva", icon=":material/add:"):
+            cambiar_pagina("Nueva solicitud")
+            st.rerun(scope="app")
         render_tabla(v, "bo", abrir_en_gestionar)
     st.caption("Vista actualizada cada 5 segundos · Los indicadores resumen todo el historial; la tabla refleja los filtros seleccionados.")
 
@@ -381,6 +389,7 @@ def detalle_supervisor(u, tid):
                 f'{chip_estado(t["estado"])}</div><p class="tt">{esc(t["tipo_consulta"])}</p>'
                 f'<p class="sm">{esc(t["cartera"])} · cuenta {mascara(t["cuenta"])} · solicitada el {fecha_txt(t["fecha_solicitud"])}</p>'
                 + (f'<p class="rp"><small>Tu consulta</small>{esc(t["descripcion"])}</p>' if t["descripcion"] else "") + pie + "</div>", unsafe_allow_html=True)
+    documentos_solicitud(u, tid)
     conversacion(u, tid)
 
 
@@ -396,50 +405,161 @@ def pagina_mis_solicitudes(u):
     if df.empty:
         titulo_pagina("Mis solicitudes")
         st.info("Todavía no tienes solicitudes. Crea la primera con el botón «Nueva solicitud».")
-        st.button("Nueva solicitud", type="primary", key="btn_nueva", on_click=cambiar_pagina, args=("Nueva solicitud",))
+        if st.button("Nueva solicitud", type="primary", key="btn_nueva"):
+            cambiar_pagina("Nueva solicitud")
+            st.rerun(scope="app")
         return
     df["dias"] = dias_abierto(df)
     a, c = st.columns([8, 2.3], vertical_alignment="center")
     a.markdown('<h1 class="h1">Mis solicitudes</h1>', unsafe_allow_html=True)
-    c.button("Nueva solicitud", type="primary", key="btn_nueva", on_click=cambiar_pagina, args=("Nueva solicitud",))
+    if c.button("Nueva solicitud", type="primary", key="btn_nueva"):
+        cambiar_pagina("Nueva solicitud")
+        st.rerun(scope="app")
     st.markdown(kpis_html(df, ("Mis solicitudes", "Recibidas", "En verificación", "Respondidas")), unsafe_allow_html=True)
     v = filtrar(df, *barra_filtros("sup"))
     render_tabla(v, "sup", abrir_detalle)
     st.caption("Abre una solicitud para consultar su detalle y conversar con el equipo de atención.")
 
 
+def reiniciar_formulario_nueva():
+    for clave in list(st.session_state):
+        if clave.startswith("nueva_"):
+            st.session_state.pop(clave, None)
+    st.session_state["_form_version"] = st.session_state.get("_form_version", 0) + 1
+
+
 def pagina_nueva(u):
-    titulo_pagina("Nueva solicitud", "El back office la verá de inmediato y te avisará aquí cuando la entidad responda.")
-    supervisor_id = u["id"]
-    if u["rol"] == "backoffice":
-        sups = db.usuarios_df()
-        sups = sups[(sups["rol"] == "supervisor") & (sups["activo"] == 1)]
-        nombre = st.selectbox("Supervisor que la solicita", sups["nombre"].tolist())
-        supervisor_id = int(sups.loc[sups["nombre"] == nombre, "id"].iloc[0]) if len(sups) else None
-    with st.form("nueva", clear_on_submit=True):
-        c1, c2 = st.columns(2)
-        cartera = c1.selectbox("Cartera", CARTERAS)
-        tipo = c2.selectbox("Tipo de consulta", TIPOS_CONSULTA)
-        documento = c1.text_input("Documento (DNI)")
-        cuenta = c2.text_input("Número de cuenta")
-        descripcion = st.text_area("Descripción de la consulta", height=120)
-        forzar = st.checkbox("Crear aunque ya exista una solicitud abierta con el mismo documento y cuenta")
-        if st.form_submit_button("Crear solicitud", type="primary"):
-            doc, cta = documento.strip(), cuenta.strip()
-            repetidas = db.abiertas_por_documento(doc, cta) if doc else []
+    if not acceso_vigente(u):
+        return
+    if st.session_state.pop("_reset_nueva", False):
+        reiniciar_formulario_nueva()
+    st.markdown('<div class="request-heading"><div class="request-title" role="heading" aria-level="1">Nueva solicitud</div><p>Cuéntanos qué necesitas. El equipo revisará los datos y documentos de tu solicitud.</p></div>', unsafe_allow_html=True)
+    resultado = st.session_state.get("_solicitud_resultado")
+    if resultado:
+        with st.container(key="solicitud_confirmacion"):
+            st.success(f"Solicitud {resultado['codigo']} registrada correctamente.")
+            if st.button("Ver solicitud registrada", icon=":material/arrow_forward:"):
+                st.session_state.pop("_solicitud_resultado", None)
+                if u["rol"] == "backoffice":
+                    ir_a("Gestionar", resultado["id"])
+                else:
+                    cambiar_pagina("Mis solicitudes")
+                    abrir_detalle(resultado["id"])
+                st.rerun(scope="app")
+    contenido, ayuda = st.columns([2.05, 1], gap="large", vertical_alignment="top")
+    with contenido, st.container(key="nueva_detalles"):
+        st.markdown('<div class="request-card-heading"><span class="request-step">01</span><div><div class="request-card-title" role="heading" aria-level="2">Detalles de la solicitud</div><p>Los campos con * son obligatorios.</p></div></div>', unsafe_allow_html=True)
+        asunto = st.text_input("Asunto *", placeholder="Resume brevemente la atención que necesitas", max_chars=160, key="nueva_asunto")
+        supervisor_id = u["id"]
+        if u["rol"] == "backoffice":
+            sups = db.usuarios_df()
+            sups = sups[(sups["rol"] == "supervisor") & (sups["activo"] == 1)]
+            nombres = {int(r.id): r.nombre.title() for r in sups.itertuples()}
+            supervisor_id = st.selectbox("Supervisor que solicita *", list(nombres), format_func=lambda i: nombres[i], key="nueva_supervisor") if nombres else None
             if supervisor_id is None:
-                st.error("No hay supervisores activos. Créalos en «Usuarios».")
-            elif not doc or not cta:
-                st.error("El documento y la cuenta son obligatorios.")
-            elif not re.fullmatch(r"[0-9A-Za-z]{6,15}", doc):
-                st.error("El documento solo debe tener letras y números (entre 6 y 15 caracteres).")
-            elif repetidas and not forzar:
-                st.warning(f"Ya hay solicitudes abiertas con ese documento y cuenta: {', '.join(repetidas)}. "
-                           "Si es otra consulta, marca la casilla y vuelve a crear.")
+                st.warning("Crea un supervisor activo en Usuarios antes de registrar la solicitud.")
+        c1, c2 = st.columns(2)
+        cartera = c1.selectbox("Cartera *", CARTERAS, key="nueva_cartera")
+        tipo = c2.selectbox("Tipo de consulta *", TIPOS_CONSULTA, key="nueva_tipo")
+        transaccion = tipo == TIPO_TRANSACCION
+        incompletos = False
+        nombre_cliente = expediente = juzgado = materia = cuenta = ""
+        if transaccion:
+            st.markdown('<div class="request-section"><span class="request-step">02</span><div><div class="request-section-title" role="heading" aria-level="3">Datos del expediente</div><p>Información para preparar la transacción extrajudicial.</p></div></div>', unsafe_allow_html=True)
+            incompletos = st.checkbox("No dispongo de todos los datos; adjuntaré los documentos del expediente", key="nueva_incompletos")
+            if incompletos:
+                st.info("Completa lo que conozcas y adjunta al menos un documento. El equipo extraerá la información que falte.")
+            marca = "" if incompletos else " *"
+            c1, c2 = st.columns(2)
+            documento = c1.text_input("DNI" + marca, placeholder="8 dígitos", max_chars=8, key="nueva_documento")
+            nombre_cliente = c2.text_input("Nombre completo" + marca, placeholder="Nombres y apellidos", max_chars=160, key="nueva_nombre")
+            expediente = c1.text_input("Nº de expediente" + marca, placeholder="Número del expediente judicial", max_chars=100, key="nueva_expediente")
+            juzgado = c2.text_input("Juzgado" + marca, placeholder="Órgano jurisdiccional", max_chars=200, key="nueva_juzgado")
+            materia = st.text_input("Materia" + marca, placeholder="Materia del proceso", max_chars=200, key="nueva_materia")
+        else:
+            c1, c2 = st.columns(2)
+            documento = c1.text_input("Documento (DNI) *", placeholder="Documento del cliente", max_chars=15, key="nueva_documento")
+            cuenta = c2.text_input("Número de cuenta *", placeholder="Cuenta relacionada con la solicitud", max_chars=30, key="nueva_cuenta")
+        descripcion = st.text_area("Descripción *", placeholder="Describe la atención que necesitas y cualquier información que ayude a revisarla.", height=150, max_chars=5000, key="nueva_descripcion")
+        st.markdown('<div class="request-section"><span class="request-step">' + ("03" if transaccion else "02") + '</span><div><div class="request-section-title" role="heading" aria-level="3">Documentos de respaldo' + (' *' if incompletos else '') + '</div><p>Adjunta el expediente o los documentos que ayuden a resolver la solicitud.</p></div></div>', unsafe_allow_html=True)
+        archivos = st.file_uploader("Selecciona o arrastra tus documentos", type=["pdf", "png", "jpg", "jpeg"], accept_multiple_files=True, max_upload_size=10,
+                                    help="Hasta 5 archivos, máximo 10 MB por archivo y 30 MB en total.", key=f"nueva_archivos_{st.session_state.get('_form_version', 0)}")
+        st.caption("PDF, PNG o JPG · Hasta 5 archivos · 10 MB por archivo · 30 MB en total")
+        forzar = st.checkbox("Registrar otra solicitud aunque exista una abierta para el mismo DNI y expediente" if transaccion else "Registrar otra solicitud aunque exista una abierta para el mismo documento y cuenta", key="nueva_forzar")
+        st.divider()
+        pie, cancelar, enviar = st.columns([1.2, .8, 1.2], vertical_alignment="center")
+        pie.markdown('<span class="required-note">* Campos obligatorios</span>', unsafe_allow_html=True)
+        if cancelar.button("Cancelar", key="nueva_cancelar", use_container_width=True):
+            st.session_state["_reset_nueva"] = True
+            st.session_state.pop("_solicitud_resultado", None)
+            cambiar_pagina("Inicio" if u["rol"] == "backoffice" else "Mis solicitudes")
+            st.rerun(scope="app")
+        if enviar.button("Enviar solicitud", type="primary", icon=":material/arrow_forward:", key="nueva_enviar", use_container_width=True):
+            try:
+                tid, codigo = registrar_solicitud(u["id"], supervisor_id, asunto=asunto, cartera=cartera, tipo=tipo,
+                    documento=documento, cuenta=cuenta, descripcion=descripcion, nombre_cliente=nombre_cliente,
+                    numero_expediente=expediente, juzgado=juzgado, materia=materia, datos_incompletos=incompletos,
+                    adjuntos=[{"nombre": f.name, "datos": f.getvalue()} for f in archivos], forzar=forzar)
+                st.session_state["_solicitud_resultado"] = {"id": tid, "codigo": codigo}
+                st.session_state["_reset_nueva"] = True
+                st.rerun(scope="app")
+            except SolicitudDuplicada as exc:
+                st.warning(str(exc))
+            except (ValueError, PermissionError) as exc:
+                st.error(str(exc))
+            except sqlite3.Error:
+                st.error("No se pudo guardar la solicitud. Revisa el almacenamiento y vuelve a intentar; no se registró una solicitud parcial.")
+    with ayuda, st.container(key="nueva_ayuda"):
+        st.markdown('<div class="help-heading"><span>?</span><div class="request-help-title" role="heading" aria-level="2">Te ayudamos a completarla</div></div><p class="help-intro">Una solicitud clara permite revisar tu caso con toda la información necesaria.</p><div class="help-divider"></div><div class="request-help-section-title" role="heading" aria-level="3">Antes de enviar</div><ul class="help-list"><li>Escribe un asunto breve y específico.</li><li>Verifica la cartera y los datos del cliente.</li><li>Explica qué atención necesitas.</li><li>Adjunta documentos legibles cuando corresponda.</li></ul>', unsafe_allow_html=True)
+        if transaccion:
+            st.markdown('<div class="case-help"><strong>Transacción extrajudicial</strong><p>Necesitamos DNI, nombre, número de expediente, juzgado y materia. Si falta información, marca la opción del expediente y adjunta los documentos disponibles.</p></div>', unsafe_allow_html=True)
+        st.markdown('<div class="request-security"><span>✓</span><p>Los documentos quedan disponibles para el supervisor de esta solicitud y el equipo de atención. No incluyas contraseñas.</p></div>', unsafe_allow_html=True)
+
+
+def documentos_solicitud(u, tid):
+    t = db.ticket(tid)
+    if not t or (u["rol"] != "backoffice" and t["supervisor_id"] != u["id"]):
+        return
+    if t["asunto"]:
+        st.markdown(f'<div class="ticket-subject"><small>ASUNTO</small><strong>{esc(t["asunto"])}</strong></div>', unsafe_allow_html=True)
+    if t["tipo_consulta"] == TIPO_TRANSACCION:
+        with st.container(border=True):
+            st.markdown("### Datos del expediente")
+            if t["datos_incompletos"]:
+                st.info("El solicitante indicó que falta información. Revisa los documentos adjuntos para completarla.")
+            campos = [("DNI", t["documento"]), ("Nombre", t["nombre_cliente"]), ("Nº de expediente", t["numero_expediente"]), ("Juzgado", t["juzgado"]), ("Materia", t["materia"])]
+            st.markdown('<div class="case-data-grid">' + ''.join(f'<div><small>{etiqueta}</small><strong>{esc(valor or "Por completar")}</strong></div>' for etiqueta, valor in campos) + '</div>', unsafe_allow_html=True)
+        if u["rol"] == "backoffice":
+            with st.expander("Completar o editar datos del expediente"):
+                with st.form(f"expediente_{tid}"):
+                    c1, c2 = st.columns(2)
+                    dni = c1.text_input("DNI", value=t["documento"] or "", max_chars=8)
+                    nombre = c2.text_input("Nombre completo", value=t["nombre_cliente"], max_chars=160)
+                    expediente = c1.text_input("Nº de expediente", value=t["numero_expediente"], max_chars=100)
+                    juzgado = c2.text_input("Juzgado", value=t["juzgado"], max_chars=200)
+                    materia = st.text_input("Materia", value=t["materia"], max_chars=200)
+                    if st.form_submit_button("Guardar datos del expediente", type="primary"):
+                        try:
+                            db.actualizar_expediente(tid, u["id"], dni, nombre, expediente, juzgado, materia)
+                            st.toast("Datos del expediente guardados")
+                            st.rerun(scope="app")
+                        except (ValueError, PermissionError) as exc:
+                            st.error(str(exc))
+    try:
+        adjuntos = db.adjuntos_ticket(tid, u["id"])
+    except PermissionError:
+        return
+    if adjuntos:
+        st.markdown("### Documentos adjuntos")
+    for a in adjuntos:
+        with st.container(border=True):
+            nombre, accion = st.columns([3, 1], vertical_alignment="center")
+            nombre.markdown(f'<div class="document-label"><span>{esc(a["nombre"].rsplit(".", 1)[-1].upper())}</span><div><strong>{esc(a["nombre"])}</strong><small>{a["tamano"] / 1024:.0f} KB · Documento de respaldo</small></div></div>', unsafe_allow_html=True)
+            if os.getenv("PORTAL_AUTH_HTTP") == "1":
+                accion.link_button("Descargar", f"/_portal/adjuntos/{a['id']}", icon=":material/download:")
             else:
-                _, codigo = db.crear_ticket(supervisor_id, cartera, tipo, doc, cta, descripcion.strip(), origen="web", usuario_id=u["id"])
-                st.success(f"Solicitud {codigo} creada. Puedes seguirla en «Mis solicitudes»." if u["rol"] == "supervisor"
-                           else f"Solicitud {codigo} creada. Ábrela desde «Inicio» o «Gestionar».")
+                archivo = db.obtener_adjunto(a["id"], u["id"])
+                accion.download_button("Descargar", archivo["datos"], file_name=a["nombre"], mime=a["tipo_mime"], key=f"descargar_adjunto_{a['id']}")
 
 
 # ---------- gestión de un ticket (back office) ----------
@@ -514,6 +634,7 @@ def pagina_gestionar(u):
                     st.toast("Ticket actualizado · aviso de correo en cola")
                     st.rerun()
 
+    documentos_solicitud(u, tid)
     conversacion(u, tid)
 
 
@@ -701,7 +822,10 @@ def centro_notificaciones(u):
     with st.container(key="topbar"):
         estado, revision, campana = st.columns([7, 4, .7], vertical_alignment="center")
         pagina_actual = NAV_INFO.get(st.session_state.get("pagina_pf", "Inicio"), ("", "Solicitudes"))[1]
-        estado.markdown(f'<div class="topbar-path"><h1>{esc(pagina_actual)}</h1></div>', unsafe_allow_html=True)
+        if st.session_state.get("pagina_pf") == "Nueva solicitud":
+            estado.markdown('<div class="request-breadcrumb"><span>Solicitudes</span><i>/</i><strong>Nueva solicitud</strong></div>', unsafe_allow_html=True)
+        else:
+            estado.markdown(f'<div class="topbar-path"><h1>{esc(pagina_actual)}</h1></div>', unsafe_allow_html=True)
         revision.markdown(f'<div class="header-sync"><span class="online-dot"></span> En línea <span class="sync-time">· Última revisión {pd.Timestamp.now(tz="America/Lima").strftime("%H:%M:%S")}</span></div>', unsafe_allow_html=True)
         with campana.container(key="campana_notificaciones"):
             if pendientes:

@@ -29,7 +29,8 @@ REFRESCO_SEGUNDOS = 60              # cada cuánto la página revisa si guardast
 
 # ---------- Plataforma de solicitudes (tickets) ----------
 RUTA_DB = Path(os.getenv("RUTA_DB", RAIZ / "db" / "plataforma.db"))
-TIPOS_CONSULTA = ["Canceló con entidad original", "Actualización de centrales", "Acuerdo con entidad"]
+TIPO_TRANSACCION = "Transacción Extrajudicial"
+TIPOS_CONSULTA = ["Canceló con entidad original", "Actualización de centrales", "Acuerdo con entidad", TIPO_TRANSACCION]
 ESTADOS_TICKET = ["Recibida", "Enviada a verificar", "Respondida"]
 CONCLUSIONES = ["PROCEDENTE", "IMPROCEDENTE"]      # Respondida puede ser positiva (procedente) o negativa (improcedente)
 CORRESPONDE = ["Alícuota", "Posible alícuota", "No aplica"]

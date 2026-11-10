@@ -5,6 +5,7 @@ import os
 import secrets
 import time
 from collections import defaultdict
+from urllib.parse import quote
 
 from aiohttp import ClientSession, WSMsgType, web
 import db
@@ -67,6 +68,19 @@ async def login(request):
     return response
 
 
+async def descargar_adjunto(request):
+    usuario = db.usuario_por_sesion(request.cookies.get(COOKIE))
+    if not usuario:
+        raise web.HTTPUnauthorized(text="Inicia sesión para descargar el documento.")
+    try:
+        archivo = db.obtener_adjunto(int(request.match_info["id"]), usuario["id"])
+    except (PermissionError, ValueError):
+        raise web.HTTPNotFound(text="Documento no disponible.")
+    return web.Response(body=archivo["datos"], content_type=archivo["tipo_mime"], headers={
+        "Content-Disposition": "attachment; filename*=UTF-8''" + quote(archivo["nombre"], safe=""),
+        "Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff"})
+
+
 async def proxy(request):
     if request.path != "/_stcore/health" and not request.path.startswith("/static/") and db.hay_backoffice() and not db.usuario_por_sesion(request.cookies.get(COOKIE)):
         raise web.HTTPSeeOther("/_portal/login")
@@ -123,6 +137,7 @@ def crear_app(backend):
             app["client"] = client
             yield
     app.cleanup_ctx.append(ciclo)
+    app.router.add_get("/_portal/adjuntos/{id}", descargar_adjunto)
     app.router.add_route("GET", "/_portal/login", login)
     app.router.add_route("POST", "/_portal/login", login)
     app.router.add_route("*", "/{path:.*}", proxy)
