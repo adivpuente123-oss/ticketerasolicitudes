@@ -39,7 +39,8 @@ def comprobar_actualizacion():
 
 def iniciar_portal():
     opciones = {'creationflags': subprocess.CREATE_NEW_PROCESS_GROUP} if os.name == 'nt' else {'start_new_session': True}
-    return subprocess.Popen([sys.executable, 'servidor.py'], cwd=RAIZ, **opciones)
+    entorno = dict(os.environ, BROWSER='none', PORTAL_ABRIR_NAVEGADOR='0')
+    return subprocess.Popen([sys.executable, 'servidor.py'], cwd=RAIZ, env=entorno, **opciones)
 
 
 def detener_portal(proceso):
@@ -59,9 +60,37 @@ def detener_portal(proceso):
         proceso.wait()
 
 
+def adquirir_bloqueo():
+    from config import RUTA_DB
+    RUTA_DB.parent.mkdir(parents=True, exist_ok=True)
+    puerto = int(os.getenv('PORT', '8502'))
+    archivo = (RUTA_DB.parent / f'actualizador-{puerto}.lock').open('a+b')
+    try:
+        if os.name == 'nt':
+            import msvcrt
+            archivo.seek(0)
+            if not archivo.read(1):
+                archivo.write(b'0')
+                archivo.flush()
+            archivo.seek(0)
+            msvcrt.locking(archivo.fileno(), msvcrt.LK_NBLCK, 1)
+        else:
+            import fcntl
+            fcntl.flock(archivo.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError as exc:
+        archivo.close()
+        raise RuntimeError('Ya hay un actualizador abierto. Usa la misma pestaña del portal y conserva una sola ventana de inicio.') from exc
+    return archivo
+
+
 def main():
     intervalo = max(30, int(os.getenv('ACTUALIZACION_SEGUNDOS', '60')))
     proceso = None
+    try:
+        bloqueo = adquirir_bloqueo()
+    except RuntimeError as exc:
+        print(str(exc), flush=True)
+        return
     try:
         try:
             nuevo = comprobar_actualizacion()
@@ -87,7 +116,7 @@ def main():
                     git('merge', '--ff-only', nuevo)
                 finally:
                     proceso = iniciar_portal()
-                print('Portal actualizado. Recarga tu navegador. La base de datos se conserva.', flush=True)
+                print('Portal actualizado en la misma direccion. Recarga la pestaña que ya tienes abierta. La base de datos se conserva.', flush=True)
             except ValueError as exc:
                 print(str(exc), flush=True)
             except (subprocess.SubprocessError, OSError):
@@ -95,8 +124,11 @@ def main():
     except KeyboardInterrupt:
         pass
     finally:
-        if proceso is not None:
-            detener_portal(proceso)
+        try:
+            if proceso is not None:
+                detener_portal(proceso)
+        finally:
+            bloqueo.close()
 
 
 if __name__ == '__main__':

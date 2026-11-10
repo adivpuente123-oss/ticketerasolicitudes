@@ -145,6 +145,15 @@ python src/administrar_usuarios.py editar 3 --cambiar-clave
 
 El último comando pide la contraseña dos veces de forma oculta; no la escribas como argumento ni en archivos Python. También admite `--nombre`, `--rol`, `--activar` y `--desactivar`. Necesita acceso al archivo de base de datos del servidor: usa solo la terminal de administración autorizada. Los cambios aparecen en la aplicación al actualizarla. Para despliegues Docker ejecuta la herramienta dentro del contenedor del portal para usar el mismo volumen. No edites `clave_hash` a mano ni guardes usuarios reales como constantes en GitHub.
 
+## Una sola dirección durante las actualizaciones
+
+Usa siempre http://localhost:8502 en tu PC (o el PORT que hayas configurado). En un servidor usa tu dominio/PORTAL_URL. El enlace interno de Streamlit ya no se muestra como enlace de acceso. Las actualizaciones reinician los procesos del portal en los mismos puertos, sin abrir navegadores ni crear nuevas ventanas de consola. Mantén una sola ventana del actualizador y recarga la misma pestaña después de la actualización; durante el reinicio puede haber una breve desconexión.
+
+Si un puerto está ocupado, el inicio informa del conflicto y no selecciona otro. Un bloqueo evita iniciar dos actualizadores sobre la misma base y puerto. No abras iniciar_plataforma.bat y el actualizador a la vez.
+
+Esta actualización cambia el propio actualizador: incorpórala a main, cierra el actualizador anterior, ejecuta git pull origin main y ábrelo una vez más. A partir de ese momento, las actualizaciones compatibles se aplican sin volver a abrirlo. El dominio debe estar alojado y configurado por separado; estos cambios no publican el portal en Internet.
+
+
 ## Letras más legibles y actualización desde la PC
 
 Se aumentaron los tamaños de lectura de la tabla, estados, filtros, botones, menú e indicadores, conservando el diseño compacto.
