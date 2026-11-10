@@ -16,7 +16,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 import db
 from correo import crear_ticket_desde_correo
 from solicitudes import registrar_solicitud, SolicitudDuplicada
-from config import CARTERAS, CONCLUSIONES, CORRESPONDE, ESTADOS_TICKET, TIPOS_CONSULTA, DIAS_ALERTA_PENDIENTE, TIPO_TRANSACCION
+from config import CARTERAS, CONCLUSIONES, CORRESPONDE, ESTADOS_TICKET, TIPOS_CONSULTA, DIAS_ALERTA_PENDIENTE, TIPO_TRANSACCION, PRIORIDADES
 from estilos_plataforma import (CSS, cabecera, cabecera_tabla, esc, fila_html, kpi, logo_y, mascara, nav_item, numero, acceso_visual, fondo_acceso, ticket_resumen)
 
 st.set_page_config(page_title="Plataforma de solicitudes", initial_sidebar_state="expanded", layout="wide")
@@ -102,7 +102,7 @@ def reiniciar_pag():
 
 def cerrar_sesion():
     for clave in list(st.session_state):
-        if clave.startswith("nueva_") or clave in ("_reset_nueva", "_solicitud_resultado", "_form_version"):
+        if clave.startswith(("nueva_", "reply_", "adj_mens_", "nota_", "conv_version_", "prop_", "resolver_")) or clave in ("_reset_nueva", "_solicitud_resultado", "_form_version"):
             st.session_state.pop(clave, None)
     if os.getenv("PORTAL_AUTH_HTTP") == "1":
         db.revocar_sesion(st.context.cookies.get("portal_session"))
@@ -516,11 +516,11 @@ def pagina_nueva(u):
         st.markdown('<div class="request-security"><span>✓</span><p>Los documentos quedan disponibles para el supervisor de esta solicitud y el equipo de atención. No incluyas contraseñas.</p></div>', unsafe_allow_html=True)
 
 
-def documentos_solicitud(u, tid):
+def documentos_solicitud(u, tid, mostrar_asunto=True):
     t = db.ticket(tid)
     if not t or (u["rol"] != "backoffice" and t["supervisor_id"] != u["id"]):
         return
-    if t["asunto"]:
+    if t["asunto"] and mostrar_asunto:
         st.markdown(f'<div class="ticket-subject"><small>ASUNTO</small><strong>{esc(t["asunto"])}</strong></div>', unsafe_allow_html=True)
     if t["tipo_consulta"] == TIPO_TRANSACCION:
         with st.container(border=True):
@@ -549,9 +549,9 @@ def documentos_solicitud(u, tid):
         adjuntos = db.adjuntos_ticket(tid, u["id"])
     except PermissionError:
         return
-    if adjuntos:
+    if any(a["mensaje_id"] is None for a in adjuntos):
         st.markdown("### Documentos adjuntos")
-    for a in adjuntos:
+    for a in [a for a in adjuntos if a["mensaje_id"] is None]:
         with st.container(border=True):
             nombre, accion = st.columns([3, 1], vertical_alignment="center")
             nombre.markdown(f'<div class="document-label"><span>{esc(a["nombre"].rsplit(".", 1)[-1].upper())}</span><div><strong>{esc(a["nombre"])}</strong><small>{a["tamano"] / 1024:.0f} KB · Documento de respaldo</small></div></div>', unsafe_allow_html=True)
@@ -563,80 +563,125 @@ def documentos_solicitud(u, tid):
 
 
 # ---------- gestión de un ticket (back office) ----------
+def hora_local(valor):
+    marca = pd.to_datetime(valor, errors="coerce", utc=True)
+    return "—" if pd.isna(marca) else marca.tz_convert("America/Lima").strftime("%d/%m/%Y · %H:%M")
+
+
+def iniciales_persona(nombre):
+    return ''.join(p[:1] for p in (nombre or "Usuario").split()[:2]).upper()
+
+
 def pagina_gestionar(u):
+    if not acceso_vigente(u):
+        return
+    if u["rol"] != "backoffice":
+        st.error("Solo el equipo de atención puede gestionar solicitudes.")
+        return
+    encabezado, volver = st.columns([4, 1.35], vertical_alignment="center")
+    encabezado.markdown('<div class="request-heading gestion-heading"><div class="request-title" role="heading" aria-level="1">Gestionar solicitud</div><p>Consulta el detalle, responde y actualiza el ticket.</p></div>', unsafe_allow_html=True)
+    if volver.button("Volver al listado", icon=":material/arrow_back:", key="gestion_volver", use_container_width=True):
+        cambiar_pagina("Inicio")
+        st.rerun(scope="app")
     df = db.tickets_df()
-    titulo_pagina("Gestionar ticket", "Revisa la solicitud, envíala a verificar y registra la respuesta de la entidad.")
     if df.empty:
-        st.info("No hay tickets para gestionar.")
+        st.info("Todavía no hay solicitudes para gestionar.")
         return
     ids = df["id"].tolist()
     if st.session_state.get("ticket_sel") not in ids:
         st.session_state["ticket_sel"] = ids[0]
-    etiquetas = {r.id: f"{r.codigo} · {r.supervisor} · {r.cartera} · {r.estado}" for r in df.itertuples()}
-    tid = st.selectbox("Ticket", ids, key="ticket_sel", format_func=lambda i: etiquetas[i])
+    etiquetas = {r.id: f"{r.codigo} · {r.supervisor or 'Sin usuario'} · {r.tipo_consulta}" for r in df.itertuples()}
+    with st.expander("Cambiar de solicitud", icon=":material/search:"):
+        tid = st.selectbox("Ticket", ids, key="ticket_sel", format_func=lambda i: etiquetas[i])
     t = db.ticket(tid)
-
-    izq, der = st.columns([1, 1.15], gap="large")
-    with izq, st.container(key=f"card_det_{tid}"):
-        st.markdown(f'<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><b style="font-size:22px">{esc(t["codigo"])}</b>'
-                    f'{chip_estado(t["estado"])}{chip_conclusion(t["conclusion"])}</div>'
-                    f'<div style="color:#6b7890;line-height:2;margin-top:12px">'
-                    f'Supervisor: <b style="color:#26334a">{esc(t["supervisor"])}</b><br>Cartera: {esc(t["cartera"])} · {esc(t["tipo_consulta"])}<br>'
-                    f'Documento: {esc(t["documento"])} · Cuenta: {esc(t["cuenta"])}<br>Origen: {esc(t["origen"])}<br>'
-                    f'Solicitada: {fecha_txt(t["fecha_solicitud"])} · Enviada: {fecha_txt(t["fecha_envio"]) if t["fecha_envio"] else "—"}'
-                    f' · Respondida: {fecha_txt(t["fecha_respuesta"]) if t["fecha_respuesta"] else "—"}</div>', unsafe_allow_html=True)
-        if t["descripcion"]:
-            st.markdown(f'<div style="margin-top:14px;border-top:1px solid #dde2ea;padding-top:12px"><small style="color:#6b7890">Consulta del supervisor</small><br>{esc(t["descripcion"])}</div>', unsafe_allow_html=True)
-        h = db.historial_df(tid)
-        st.markdown("**Historial**")
-        st.markdown('<div class="hist">' + "".join(
-            f'<p><b>{esc(r.evento)}</b> <small>{esc(r.fecha)} · {esc(r.usuario)}</small>'
-            + (f"<br>{esc(r.detalle)}" if r.detalle else "") + "</p>" for r in h.itertuples()) + "</div>", unsafe_allow_html=True)
-
-    with der, st.container(key=f"card_form_{tid}"):
-        st.markdown("**Gestionar el ticket**")
-        with st.form(f"form_{tid}"):
-            c1, c2 = st.columns(2)
-            estado = c1.selectbox("Estado", ESTADOS_TICKET, index=ESTADOS_TICKET.index(t["estado"]))
-            f_envio = c2.date_input("Fecha de envío a la entidad", value=a_fecha(t["fecha_envio"]))
-            opciones_c = ["(sin conclusión)"] + CONCLUSIONES
-            conclusion = c1.selectbox("Conclusión de la entidad", opciones_c,
-                                      index=opciones_c.index(t["conclusion"]) if t["conclusion"] in CONCLUSIONES else 0)
-            opciones_k = ["(sin definir)"] + CORRESPONDE
-            corresponde = c2.selectbox("Estado corresponde", opciones_k,
-                                       index=opciones_k.index(t["estado_corresponde"]) if t["estado_corresponde"] in CORRESPONDE else 0)
-            respuesta = st.text_area("Descripción de la respuesta (la verá el supervisor)", value=t["respuesta"] or "", height=130)
-            sustento = st.text_input("Sustento", value=t["sustento"] or "")
-            b1, b2, b3 = st.columns(3)
-            enviar = b1.form_submit_button("Enviar a verificar")
-            responder = b2.form_submit_button("Registrar respuesta", type="primary")
-            guardar = b3.form_submit_button("Guardar cambios")
-            if enviar or responder or guardar:
-                concl = None if conclusion == opciones_c[0] else conclusion
-                corr = None if corresponde == opciones_k[0] else corresponde
-                if responder and (not concl or not respuesta.strip()):
-                    st.error("Para registrar la respuesta indica la conclusión (procedente o improcedente) y escribe la descripción.")
-                else:
-                    hoy = db.hoy_iso()
-                    comunes = dict(estado_corresponde=corr, sustento=sustento.strip() or None)
-                    if enviar:
-                        cambios = dict(estado="Enviada a verificar", fecha_envio=f_envio.isoformat() if f_envio else hoy, **comunes)
-                        evento, detalle = "Enviada a verificar", ""
-                    elif responder:
-                        cambios = dict(estado="Respondida", fecha_envio=f_envio.isoformat() if f_envio else (t["fecha_envio"] or hoy),
-                                       fecha_respuesta=t["fecha_respuesta"] or hoy, conclusion=concl, respuesta=respuesta.strip(), **comunes)
-                        evento, detalle = "Respondida", concl
-                    else:
-                        cambios = dict(estado=estado, fecha_envio=f_envio.isoformat() if f_envio else None, conclusion=concl,
-                                       respuesta=respuesta.strip() or None, **comunes)
-                        evento, detalle = "Edición", f"Estado: {estado}"
-                    db.actualizar_ticket(tid, u["id"], cambios, evento, detalle)
-                    st.toast("Ticket actualizado · aviso de correo en cola")
-                    st.rerun()
-
-    documentos_solicitud(u, tid)
-    conversacion(u, tid)
-
+    izquierda, derecha = st.columns([2.05, 1], gap="large", vertical_alignment="top")
+    with izquierda:
+        with st.container(key="gestion_resumen"):
+            st.markdown(f'<div class="gestion-badges"><span class="gestion-code">{esc(t["codigo"])}</span>{chip_estado(t["estado"])}{chip_conclusion(t["conclusion"])}</div><div class="gestion-subject" role="heading" aria-level="2">{esc(t["asunto"] or t["tipo_consulta"] or "Solicitud de atención")}</div><p class="gestion-created">Creada por <strong>{esc((t["supervisor"] or "Sin cuenta asociada").title())}</strong> · {hora_local(t["creado_en"])}</p>', unsafe_allow_html=True)
+            st.markdown('<div class="gestion-section-title" role="heading" aria-level="3">Descripción</div><div class="gestion-description">' + esc(t["descripcion"] or "Sin descripción registrada.").replace('\n', '<br>') + '</div>', unsafe_allow_html=True)
+            st.markdown(f'<div class="gestion-metadata"><span>Cartera <strong>{esc(t["cartera"])}</strong></span><span>Documento <strong>{esc(t["documento"] or "Por completar")}</strong></span><span>Cuenta <strong>{esc(t["cuenta"] or "No indicada")}</strong></span></div>', unsafe_allow_html=True)
+            if t["respuesta"]:
+                st.markdown('<div class="gestion-resolution"><strong>Respuesta registrada</strong><p>' + esc(t["respuesta"]).replace('\n', '<br>') + '</p></div>', unsafe_allow_html=True)
+            documentos_solicitud(u, tid, mostrar_asunto=False)
+        conversacion(u, tid)
+        with st.expander("Historial de la solicitud", icon=":material/history:"):
+            h = db.historial_df(tid)
+            st.markdown('<div class="hist">' + ''.join(f'<p><b>{esc(r.evento)}</b><small>{hora_local(r.fecha)} · {esc(r.usuario)}</small>{esc(r.detalle or "")}</p>' for r in h.itertuples()) + '</div>', unsafe_allow_html=True)
+    with derecha:
+        with st.container(key="gestion_propiedades"):
+            st.markdown('<div class="gestion-card-title" role="heading" aria-level="2">Propiedades del ticket</div>', unsafe_allow_html=True)
+            usuarios = db.usuarios_df()
+            equipo = usuarios[(usuarios["rol"] == "backoffice") & (usuarios["activo"] == 1)]
+            nombres = {int(r.id): r.nombre.title() for r in equipo.itertuples()}
+            if t["asignado_a"] and t["asignado_a"] not in nombres:
+                anterior = db.usuario_por_id(t["asignado_a"])
+                nombres[t["asignado_a"]] = (anterior["nombre"].title() if anterior else "Usuario") + " (inactivo)"
+            opciones_asignado = [None] + list(nombres)
+            tipos = TIPOS_CONSULTA + ([t["tipo_consulta"] or "Sin tipo"] if t["tipo_consulta"] not in TIPOS_CONSULTA else [])
+            carteras = CARTERAS + ([t["cartera"]] if t["cartera"] not in CARTERAS else [])
+            with st.form(f"propiedades_{tid}"):
+                estado = st.selectbox("Estado", ESTADOS_TICKET, index=ESTADOS_TICKET.index(t["estado"]), key=f"prop_estado_{tid}")
+                prioridad = st.selectbox("Prioridad", PRIORIDADES, index=PRIORIDADES.index(t["prioridad"]) if t["prioridad"] in PRIORIDADES else 1, key=f"prop_prioridad_{tid}")
+                asignado = st.selectbox("Asignado a", opciones_asignado, index=opciones_asignado.index(t["asignado_a"]) if t["asignado_a"] in opciones_asignado else 0, format_func=lambda i: "Sin asignar" if i is None else nombres[i], key=f"prop_asignado_{tid}")
+                tipo = st.selectbox("Tipo de consulta", tipos, index=tipos.index(t["tipo_consulta"] or "Sin tipo"), key=f"prop_tipo_{tid}")
+                cartera = st.selectbox("Cartera", carteras, index=carteras.index(t["cartera"]), key=f"prop_cartera_{tid}")
+                if st.form_submit_button("Guardar cambios", type="primary", use_container_width=True):
+                    try:
+                        db.actualizar_propiedades(tid, u["id"], estado, prioridad, asignado, cartera, tipo)
+                        st.toast("Propiedades guardadas")
+                        st.rerun(scope="app")
+                    except (ValueError, PermissionError) as exc:
+                        st.error(str(exc))
+        with st.container(key="gestion_solicitante"):
+            solicitante = db.usuario_por_id(t["supervisor_id"]) if t["supervisor_id"] else None
+            nombre = (t["supervisor"] or "Sin cuenta asociada").title()
+            correo = solicitante["correo"] if solicitante and solicitante["correo"] else "Sin correo registrado"
+            st.markdown('<div class="gestion-card-title" role="heading" aria-level="2">Solicitante</div>' + f'<div class="requester-profile"><span>{esc(iniciales_persona(nombre))}</span><div><strong>{esc(nombre)}</strong><small>{esc(correo)}</small></div></div><div class="requester-row"><span>Canal de recepción</span><strong>{esc({"web":"Portal web", "correo":"Correo", "excel":"Importación de Excel"}.get(t["origen"], t["origen"]))}</strong></div>', unsafe_allow_html=True)
+        with st.container(key="gestion_tiempos"):
+            primeros = [m for m in db.mensajes(tid) if m["autor_rol"] == "backoffice"]
+            primera = "No registrada en la conversación"
+            if primeros:
+                segundos = max(0, (pd.Timestamp(primeros[0]["creado_en"]) - pd.Timestamp(t["creado_en"])).total_seconds())
+                minutos = int(segundos // 60)
+                primera = "Menos de 1 minuto" if minutos == 0 else f"{minutos} min" if minutos < 60 else f"{minutos // 60} h {minutos % 60} min"
+            st.markdown('<div class="gestion-card-title" role="heading" aria-level="2">Seguimiento de atención</div>' + f'<div class="tracking-row"><span>Solicitada</span><strong>{fecha_txt(t["fecha_solicitud"])}</strong></div><div class="tracking-row"><span>Último cambio</span><strong>{hora_local(t["actualizado_en"])}</strong></div><div class="tracking-row"><span>Primera respuesta pública</span><strong>{esc(primera)}</strong></div>', unsafe_allow_html=True)
+        with st.container(key="gestion_resultado"):
+            with st.expander("Verificación y resultado", icon=":material/task_alt:"):
+                with st.form(f"resolver_{tid}"):
+                    f_envio = st.date_input("Fecha de envío a la entidad", value=a_fecha(t["fecha_envio"]))
+                    opciones_c = ["(sin conclusión)"] + CONCLUSIONES
+                    conclusion = st.selectbox("Conclusión de la entidad", opciones_c, index=opciones_c.index(t["conclusion"]) if t["conclusion"] in CONCLUSIONES else 0)
+                    opciones_k = ["(sin definir)"] + CORRESPONDE
+                    corresponde = st.selectbox("Estado corresponde", opciones_k, index=opciones_k.index(t["estado_corresponde"]) if t["estado_corresponde"] in CORRESPONDE else 0)
+                    respuesta = st.text_area("Respuesta final para el supervisor", value=t["respuesta"] or "", height=120)
+                    sustento = st.text_input("Sustento", value=t["sustento"] or "")
+                    b1, b2 = st.columns(2)
+                    enviar = b1.form_submit_button("Enviar a verificar")
+                    responder = b2.form_submit_button("Registrar respuesta", type="primary")
+                    guardar = st.form_submit_button("Guardar datos de respuesta", use_container_width=True)
+                    if enviar or responder or guardar:
+                        concl = None if conclusion == opciones_c[0] else conclusion
+                        corr = None if corresponde == opciones_k[0] else corresponde
+                        if responder and (not concl or not respuesta.strip()):
+                            st.error("Indica la conclusión y escribe la respuesta para registrar el resultado.")
+                        else:
+                            hoy = db.hoy_iso()
+                            comunes = dict(estado_corresponde=corr, sustento=sustento.strip() or None)
+                            if enviar:
+                                cambios = dict(estado="Enviada a verificar", fecha_envio=f_envio.isoformat() if f_envio else hoy, **comunes)
+                                evento, detalle = "Enviada a verificar", ""
+                            elif responder:
+                                cambios = dict(estado="Respondida", fecha_envio=f_envio.isoformat() if f_envio else (t["fecha_envio"] or hoy), fecha_respuesta=t["fecha_respuesta"] or hoy, conclusion=concl, respuesta=respuesta.strip(), **comunes)
+                                evento, detalle = "Respondida", concl
+                            else:
+                                cambios = dict(fecha_envio=f_envio.isoformat() if f_envio else t["fecha_envio"], conclusion=concl, respuesta=respuesta.strip() or None, **comunes)
+                                evento, detalle = "Edición de respuesta", ""
+                            try:
+                                db.actualizar_ticket(tid, u["id"], cambios, evento, detalle, requerir_backoffice=True)
+                                st.toast("Resultado guardado · aviso en cola para revisión")
+                                st.rerun(scope="app")
+                            except (ValueError, PermissionError) as exc:
+                                st.error(str(exc))
 
 def acceso_vigente(u):
     actual = db.usuario_por_sesion(st.context.cookies.get("portal_session")) if os.getenv("PORTAL_AUTH_HTTP") == "1" else db.usuario_por_id(u["id"])
@@ -649,20 +694,61 @@ def acceso_vigente(u):
     return True
 
 
+def enlace_adjunto(u, archivo, clave):
+    if os.getenv("PORTAL_AUTH_HTTP") == "1":
+        st.link_button(f"Descargar {archivo['nombre']}", f"/_portal/adjuntos/{archivo['id']}", icon=":material/attach_file:")
+    else:
+        datos = db.obtener_adjunto(archivo["id"], u["id"])
+        st.download_button(archivo["nombre"], datos["datos"], file_name=archivo["nombre"], mime=archivo["tipo_mime"], key=clave)
+
+
 def conversacion(u, tid):
-    st.subheader("Conversación del ticket")
-    for m in db.mensajes(tid):
-        with st.container(border=True):
-            st.caption(f"{m['nombre']} · {m['creado_en']} · {'Correo' if m['id_correo'] else 'Web'}")
-            st.text(m["cuerpo"])
-    with st.form(f"mensaje_{tid}", clear_on_submit=True):
-        texto = st.text_area("Agregar mensaje", max_chars=20000)
-        if st.form_submit_button("Enviar mensaje"):
-            try:
-                db.agregar_mensaje(tid, u["id"], texto)
-                st.rerun(scope="app")
-            except (ValueError, PermissionError) as exc:
-                st.error(str(exc))
+    t = db.ticket(tid)
+    if not t or (u["rol"] != "backoffice" and t["supervisor_id"] != u["id"]):
+        return
+    with st.container(key=f"gestion_conversacion_{tid}"):
+        st.markdown('<div class="gestion-card-title" role="heading" aria-level="2">Conversación</div>', unsafe_allow_html=True)
+        pestañas = st.tabs(["Respuesta pública", "Nota interna"]) if u["rol"] == "backoffice" else [st.container()]
+        with pestañas[0]:
+            mensajes = db.mensajes(tid)
+            archivos = db.adjuntos_ticket(tid, u["id"])
+            if not mensajes:
+                st.markdown('<p class="chat-empty">Todavía no hay mensajes. Escribe una respuesta para continuar la atención.</p>', unsafe_allow_html=True)
+            for m in mensajes:
+                equipo = m["autor_rol"] == "backoffice"
+                nombre = (m["nombre"] or "Usuario eliminado").title()
+                st.markdown(f'<div class="chat-message {"team" if equipo else "client"}"><span class="chat-avatar">{esc(iniciales_persona(nombre))}</span><div class="chat-content"><div class="chat-author"><strong>{esc(nombre)}</strong><small>{hora_local(m["creado_en"])} · {"Correo" if m["id_correo"] else "Portal"}</small></div><div class="chat-bubble">{esc(m["cuerpo"]).replace(chr(10), "<br>")}</div></div></div>', unsafe_allow_html=True)
+                for archivo in archivos:
+                    if archivo["mensaje_id"] == m["id"]:
+                        enlace_adjunto(u, archivo, f"adj_reply_{archivo['id']}")
+            version = st.session_state.get(f"conv_version_{tid}", 0)
+            with st.form(f"publico_{tid}_{version}"):
+                texto = st.text_area("Respuesta pública", placeholder="Escribe una respuesta para el solicitante...", height=115, max_chars=20000, key=f"reply_{tid}_{version}")
+                with st.expander("Adjuntar archivos", icon=":material/attach_file:"):
+                    adjuntos = st.file_uploader("Documentos de la respuesta", type=["pdf","png","jpg","jpeg"], accept_multiple_files=True, max_upload_size=10, key=f"adj_mens_{tid}_{version}")
+                    st.caption("Hasta 5 archivos · 10 MB por archivo · 30 MB en total")
+                aviso, boton_respuesta = st.columns([2, 1.2], vertical_alignment="center")
+                aviso.caption("Esta respuesta será visible para el solicitante.")
+                if boton_respuesta.form_submit_button("Enviar respuesta", type="primary", use_container_width=True):
+                    try:
+                        db.agregar_mensaje(tid, u["id"], texto, adjuntos=[{"nombre": a.name, "datos": a.getvalue()} for a in adjuntos])
+                        st.session_state[f"conv_version_{tid}"] = version + 1
+                        st.rerun(scope="app")
+                    except (ValueError, PermissionError) as exc:
+                        st.error(str(exc))
+        if u["rol"] == "backoffice":
+            with pestañas[1]:
+                st.caption("Solo visible para el equipo de atención. No se envía al supervisor ni por correo.")
+                for nota in db.notas_ticket(tid, u["id"]):
+                    st.markdown(f'<div class="internal-note"><div><strong>{esc((nota["nombre"] or "Usuario eliminado").title())}</strong><small>{hora_local(nota["creado_en"])}</small></div><p>{esc(nota["cuerpo"]).replace(chr(10), "<br>")}</p></div>', unsafe_allow_html=True)
+                with st.form(f"nota_{tid}", clear_on_submit=True):
+                    nota = st.text_area("Nota interna", placeholder="Agrega contexto para el equipo...", max_chars=10000, key=f"nota_texto_{tid}")
+                    if st.form_submit_button("Guardar nota interna", type="primary", use_container_width=True):
+                        try:
+                            db.agregar_nota_interna(tid, u["id"], nota)
+                            st.rerun(scope="app")
+                        except (ValueError, PermissionError) as exc:
+                            st.error(str(exc))
 
 
 @st.fragment(run_every="10s")
@@ -824,6 +910,10 @@ def centro_notificaciones(u):
         pagina_actual = NAV_INFO.get(st.session_state.get("pagina_pf", "Inicio"), ("", "Solicitudes"))[1]
         if st.session_state.get("pagina_pf") == "Nueva solicitud":
             estado.markdown('<div class="request-breadcrumb"><span>Solicitudes</span><i>/</i><strong>Nueva solicitud</strong></div>', unsafe_allow_html=True)
+        elif st.session_state.get("pagina_pf") == "Gestionar":
+            seleccion = db.ticket(st.session_state["ticket_sel"]) if st.session_state.get("ticket_sel") else None
+            codigo = seleccion["codigo"] if seleccion else "Gestionar solicitud"
+            estado.markdown(f'<div class="request-breadcrumb"><span>Solicitudes</span><i>/</i><strong>{esc(codigo)}</strong></div>', unsafe_allow_html=True)
         else:
             estado.markdown(f'<div class="topbar-path"><h1>{esc(pagina_actual)}</h1></div>', unsafe_allow_html=True)
         revision.markdown(f'<div class="header-sync"><span class="online-dot"></span> En línea <span class="sync-time">· Última revisión {pd.Timestamp.now(tz="America/Lima").strftime("%H:%M:%S")}</span></div>', unsafe_allow_html=True)

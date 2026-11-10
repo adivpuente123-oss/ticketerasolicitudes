@@ -6,7 +6,7 @@ import sqlite3
 import secrets
 import time
 from contextlib import contextmanager
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 
 import pandas as pd
 
@@ -50,6 +50,14 @@ CREATE TABLE IF NOT EXISTS tickets (
     creado_en TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     actualizado_en TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+CREATE TABLE IF NOT EXISTS notas_internas (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    ticket_id INTEGER NOT NULL REFERENCES tickets(id) ON DELETE CASCADE,
+    autor_id INTEGER REFERENCES usuarios(id) ON DELETE SET NULL,
+    cuerpo TEXT NOT NULL,
+    creado_en TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS ix_notas_ticket ON notas_internas(ticket_id);
 CREATE TABLE IF NOT EXISTS historial (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     ticket_id INTEGER NOT NULL REFERENCES tickets(id) ON DELETE CASCADE,
@@ -109,7 +117,7 @@ def hoy_iso() -> str:
 
 
 def ahora_iso() -> str:
-    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    return datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
 
 
 @contextmanager
@@ -134,9 +142,12 @@ def iniciar():
         con.executescript(ESQUEMA)
         con.execute("BEGIN IMMEDIATE")
         existentes = {r["name"] for r in con.execute("PRAGMA table_info(tickets)")}
-        for nombre, definicion in {"asunto": "TEXT NOT NULL DEFAULT ''", "nombre_cliente": "TEXT NOT NULL DEFAULT ''", "numero_expediente": "TEXT NOT NULL DEFAULT ''", "juzgado": "TEXT NOT NULL DEFAULT ''", "materia": "TEXT NOT NULL DEFAULT ''", "datos_incompletos": "INTEGER NOT NULL DEFAULT 0"}.items():
+        for nombre, definicion in {"asunto": "TEXT NOT NULL DEFAULT ''", "nombre_cliente": "TEXT NOT NULL DEFAULT ''", "numero_expediente": "TEXT NOT NULL DEFAULT ''", "juzgado": "TEXT NOT NULL DEFAULT ''", "materia": "TEXT NOT NULL DEFAULT ''", "datos_incompletos": "INTEGER NOT NULL DEFAULT 0", "prioridad": "TEXT NOT NULL DEFAULT 'Media'", "asignado_a": "INTEGER REFERENCES usuarios(id) ON DELETE SET NULL"}.items():
             if nombre not in existentes:
                 con.execute(f"ALTER TABLE tickets ADD COLUMN {nombre} {definicion}")
+        columnas_adjuntos = {r["name"] for r in con.execute("PRAGMA table_info(adjuntos)")}
+        if "mensaje_id" not in columnas_adjuntos:
+            con.execute("ALTER TABLE adjuntos ADD COLUMN mensaje_id INTEGER REFERENCES mensajes(id) ON DELETE CASCADE")
 
 
 # ---------- contraseñas (solo librería estándar: PBKDF2-SHA256) ----------
@@ -255,7 +266,7 @@ def adjuntos_ticket(tid, uid):
         acceso = con.execute("SELECT 1 FROM tickets t JOIN usuarios u ON u.id=? WHERE t.id=? AND u.activo=1 AND (u.rol='backoffice' OR t.supervisor_id=u.id)", (uid, tid)).fetchone()
         if not acceso:
             raise PermissionError("No tienes acceso a estos documentos.")
-        return con.execute("SELECT id,nombre,tipo_mime,tamano,creado_en FROM adjuntos WHERE ticket_id=? ORDER BY id", (tid,)).fetchall()
+        return con.execute("SELECT id,nombre,tipo_mime,tamano,creado_en,mensaje_id FROM adjuntos WHERE ticket_id=? ORDER BY id", (tid,)).fetchall()
 
 
 def obtener_adjunto(aid, uid):
@@ -288,10 +299,68 @@ def actualizar_expediente(tid, actor_id, documento, nombre_cliente, numero_exped
         _crear_notificaciones(con, tid, "estado", "Datos del expediente actualizados", actor_id)
 
 
+# ---------- propiedades y notas del equipo ----------
+def _exigir_equipo(con, uid):
+    u = con.execute("SELECT * FROM usuarios WHERE id=? AND activo=1 AND rol='backoffice'", (uid,)).fetchone()
+    if not u:
+        raise PermissionError("Solo el equipo de atención tiene acceso a esta operación.")
+    return u
+
+
+def actualizar_propiedades(tid, uid, estado, prioridad, asignado_a, cartera, tipo_consulta):
+    from config import ESTADOS_TICKET, PRIORIDADES, CARTERAS, TIPOS_CONSULTA, TIPO_TRANSACCION
+    if estado not in ESTADOS_TICKET or prioridad not in PRIORIDADES:
+        raise ValueError("Selecciona un estado y una prioridad válidos.")
+    with conexion() as con:
+        con.execute("BEGIN IMMEDIATE")
+        _exigir_equipo(con, uid)
+        t = con.execute("SELECT * FROM tickets WHERE id=?", (tid,)).fetchone()
+        if not t:
+            raise ValueError("La solicitud ya no existe.")
+        if cartera not in CARTERAS and cartera != t["cartera"]:
+            raise ValueError("La cartera no es válida.")
+        if tipo_consulta not in TIPOS_CONSULTA and tipo_consulta != (t["tipo_consulta"] or "Sin tipo"):
+            raise ValueError("El tipo de consulta no es válido.")
+        if asignado_a is not None:
+            asignado = con.execute("SELECT activo,rol FROM usuarios WHERE id=?", (asignado_a,)).fetchone()
+            if not asignado or asignado["rol"] != "backoffice" or (not asignado["activo"] and asignado_a != t["asignado_a"]):
+                raise ValueError("Asigna la solicitud a un integrante activo del equipo de atención.")
+        if estado == "Respondida" and t["estado"] != "Respondida" and (not t["conclusion"] or not t["respuesta"]):
+            raise ValueError("Para marcar Respondida, registra primero la conclusión y la respuesta en Verificación y resultado.")
+        incompleto = int(not all(t[k] for k in ("documento","nombre_cliente","numero_expediente","juzgado","materia"))) if tipo_consulta == TIPO_TRANSACCION else 0
+        envio = t["fecha_envio"] or (hoy_iso() if estado == "Enviada a verificar" else None)
+        respuesta = t["fecha_respuesta"] or (hoy_iso() if estado == "Respondida" else None)
+        con.execute("UPDATE tickets SET estado=?,prioridad=?,asignado_a=?,cartera=?,tipo_consulta=?,datos_incompletos=?,fecha_envio=?,fecha_respuesta=?,actualizado_en=? WHERE id=?", (estado, prioridad, asignado_a, cartera, tipo_consulta, incompleto, envio, respuesta, ahora_iso(), tid))
+        con.execute("INSERT INTO historial(ticket_id,fecha,usuario_id,evento,detalle) VALUES(?,?,?,?,?)", (tid, ahora_iso(), uid, "Propiedades actualizadas", f"Estado: {estado} · Prioridad: {prioridad}"))
+        if t["estado"] != estado:
+            _crear_notificaciones(con, tid, "estado", "Solicitud actualizada", uid)
+            _notificar(con, tid, "Actualización de solicitud", "El equipo actualizó el estado de tu solicitud.")
+        if asignado_a and asignado_a != uid and asignado_a != t["asignado_a"]:
+            con.execute("INSERT INTO notificaciones(usuario_id,ticket_id,tipo,titulo) VALUES(?,?,?,?)", (asignado_a, tid, "asignacion", "Te asignaron una solicitud"))
+
+
+def agregar_nota_interna(tid, uid, cuerpo):
+    texto = cuerpo.strip()
+    if not texto or len(texto) > 10000:
+        raise ValueError("Escribe una nota de hasta 10000 caracteres.")
+    with conexion() as con:
+        con.execute("BEGIN IMMEDIATE")
+        _exigir_equipo(con, uid)
+        if not con.execute("SELECT 1 FROM tickets WHERE id=?", (tid,)).fetchone():
+            raise ValueError("La solicitud ya no existe.")
+        con.execute("INSERT INTO notas_internas(ticket_id,autor_id,cuerpo) VALUES(?,?,?)", (tid, uid, texto))
+
+
+def notas_ticket(tid, uid):
+    with conexion() as con:
+        _exigir_equipo(con, uid)
+        return con.execute("SELECT n.*,u.nombre FROM notas_internas n LEFT JOIN usuarios u ON u.id=n.autor_id WHERE n.ticket_id=? ORDER BY n.id", (tid,)).fetchall()
+
+
 # ---------- tickets ----------
 _SELECT = """SELECT t.id, t.codigo, t.origen, t.cartera, t.tipo_consulta, t.documento, t.cuenta, t.descripcion, t.estado,
                     t.fecha_solicitud, t.fecha_envio, t.fecha_respuesta, t.conclusion, t.estado_corresponde,
-                    t.respuesta, t.sustento, t.supervisor_id, u.nombre AS supervisor, t.asunto, t.nombre_cliente, t.numero_expediente, t.juzgado, t.materia, t.datos_incompletos
+                    t.respuesta, t.sustento, t.supervisor_id, u.nombre AS supervisor, t.asunto, t.nombre_cliente, t.numero_expediente, t.juzgado, t.materia, t.datos_incompletos, t.prioridad, t.asignado_a, t.creado_en, t.actualizado_en
              FROM tickets t LEFT JOIN usuarios u ON u.id = t.supervisor_id"""
 
 
@@ -328,9 +397,12 @@ def ticket(tid):
         return con.execute(_SELECT + " WHERE t.id = ?", (tid,)).fetchone()
 
 
-def actualizar_ticket(tid, usuario_id, cambios: dict, evento: str, detalle: str = ""):
+def actualizar_ticket(tid, usuario_id, cambios: dict, evento: str, detalle: str = "", requerir_backoffice=False):
     cambios = {k: v for k, v in cambios.items() if k in PERMITIDAS}
     with conexion() as con:
+        if requerir_backoffice:
+            con.execute("BEGIN IMMEDIATE")
+            _exigir_equipo(con, usuario_id)
         if cambios:
             con.execute(f"UPDATE tickets SET {', '.join(f'{k} = ?' for k in cambios)}, actualizado_en = ? WHERE id = ?",
                         [*cambios.values(), ahora_iso(), tid])
@@ -374,7 +446,11 @@ def _notificar(con, tid, asunto, texto, avisar_equipo=False):
                     (tid, correo, f"[{t['codigo']}] {asunto}", cuerpo))
 
 
-def agregar_mensaje(tid, uid, cuerpo, id_correo=None):
+def agregar_mensaje(tid, uid, cuerpo, id_correo=None, adjuntos=None):
+    from archivos import validar_adjuntos
+    archivos = validar_adjuntos(adjuntos or [])
+    if not cuerpo.strip() and archivos:
+        cuerpo = "Documentos adjuntos."
     if not cuerpo.strip():
         raise ValueError("Escribe un mensaje.")
     with conexion() as con:
@@ -382,7 +458,9 @@ def agregar_mensaje(tid, uid, cuerpo, id_correo=None):
         t = con.execute("SELECT * FROM tickets WHERE id=?", (tid,)).fetchone()
         if not u or not t or (u["rol"] != "backoffice" and t["supervisor_id"] != uid):
             raise PermissionError("No tienes acceso a esta solicitud.")
-        con.execute("INSERT INTO mensajes(ticket_id,usuario_id,cuerpo,id_correo) VALUES(?,?,?,?)", (tid, uid, cuerpo[:20000], id_correo))
+        mid = con.execute("INSERT INTO mensajes(ticket_id,usuario_id,cuerpo,id_correo) VALUES(?,?,?,?)", (tid, uid, cuerpo[:20000], id_correo)).lastrowid
+        for archivo in archivos:
+            con.execute("INSERT INTO adjuntos(ticket_id,subido_por,nombre,tipo_mime,tamano,datos,mensaje_id) VALUES(?,?,?,?,?,?,?)", (tid, uid, archivo["nombre"], archivo["tipo_mime"], archivo["tamano"], sqlite3.Binary(archivo["datos"]), mid))
         con.execute("INSERT INTO historial(ticket_id,fecha,usuario_id,evento,detalle) VALUES(?,?,?,?,?)",
                     (tid, ahora_iso(), uid, "Mensaje recibido" if id_correo else "Mensaje", "Por correo" if id_correo else "Desde la web"))
         _crear_notificaciones(con, tid, "mensaje", "Nuevo mensaje en la conversación", uid)
@@ -392,7 +470,7 @@ def agregar_mensaje(tid, uid, cuerpo, id_correo=None):
 
 def mensajes(tid):
     with conexion() as con:
-        return con.execute("SELECT m.*,u.nombre FROM mensajes m LEFT JOIN usuarios u ON u.id=m.usuario_id WHERE ticket_id=? ORDER BY m.id", (tid,)).fetchall()
+        return con.execute("SELECT m.*,u.nombre,u.rol AS autor_rol FROM mensajes m LEFT JOIN usuarios u ON u.id=m.usuario_id WHERE ticket_id=? ORDER BY m.id", (tid,)).fetchall()
 
 
 def usuario_por_id(uid):
