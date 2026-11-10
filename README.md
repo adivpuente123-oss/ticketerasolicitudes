@@ -112,6 +112,16 @@ python -m compileall -q app src servidor.py
 
 Las pruebas usan datos ficticios y adaptadores simulados. No sustituyen la prueba de entrega real con un buzón autorizado. Docker/HTTPS requieren validación en el servidor elegido.
 
+## Solicitudes y expedientes
+
+El botón Nueva solicitud de la bandeja realiza una navegación completa al formulario, incluso con la actualización periódica del listado. La pantalla usa tarjetas de detalles y ayuda, asunto, tipo, descripción y una zona de carga de documentos. Cancelar vuelve al listado; después de enviar se muestra el código y un acceso directo al ticket. Los campos se conservan si hay un error de validación.
+
+El tipo Transacción Extrajudicial muestra DNI, nombre completo, número de expediente, juzgado y materia. Con todos los datos se registra sin exigir número de cuenta. Si falta información, el solicitante debe marcarlo y adjuntar al menos un documento del expediente; los datos conocidos se conservan y los demás quedan por completar. El equipo de atención puede completar o corregir esos campos desde Gestionar. Se recopila información para la elaboración del documento; no se extraen datos ni se genera un documento legal automáticamente.
+
+Se admiten hasta 5 archivos PDF, PNG o JPG, máximo 10 MB por archivo y 30 MB en total. Se comprueban extensión y firma del archivo. Los adjuntos se guardan de forma transaccional en la misma SQLite que el ticket, por lo que forman parte del disco persistente y sus copias. Ocupan espacio en ese disco. Si una validación falla no se crea un ticket parcial. Los datos anteriores se mantienen mediante una migración aditiva.
+
+El detalle del ticket muestra los datos y documentos al supervisor propietario y al equipo de atención. Las descargas de producción pasan por una ruta autenticada que vuelve a comprobar permisos. Al borrar un ticket se eliminan sus adjuntos; al borrar un usuario conservando sus solicitudes se conservan los documentos para el equipo. Estos adjuntos son del formulario web: la importación de archivos recibidos por correo sigue sin estar implementada.
+
 ## Panel de operaciones
 
 La interfaz agrupa la navegación en Atención, Seguimiento y Administración, con cabecera compacta y hora de revisión en Lima. Los indicadores muestran recibidas por atender, enviadas a verificar, respondidas y solicitudes abiertas por encima del umbral DIAS_ALERTA_PENDIENTE. Resumen y tabla usan datos reales; los indicadores corresponden al historial completo.

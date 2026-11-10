@@ -177,3 +177,36 @@ class UITests(unittest.TestCase):
         self.assertEqual(at.text_input(key='bo_q').value, '')
         self.assertEqual(len([b for b in at.button if str(b.key).startswith('abrir_')]), 2)
         self.assertEqual(len(at.exception), 0)
+
+    def test_boton_nueva_solicitud_abre_formulario(self):
+        at = self.app(self.admin, 'Inicio')
+        at.button(key='btn_nueva').click().run()
+        self.assertTrue(any(x.key == 'nueva_asunto' for x in at.text_input))
+        self.assertEqual(len(at.exception), 0)
+
+    def test_transaccion_muestra_campos_y_valida_documentos(self):
+        from config import TIPO_TRANSACCION
+        at = self.app(self.sup, 'Nueva solicitud')
+        at.selectbox(key='nueva_tipo').select(TIPO_TRANSACCION).run()
+        for key in ['nueva_nombre','nueva_expediente','nueva_juzgado','nueva_materia']:
+            self.assertTrue(any(x.key == key for x in at.text_input))
+        at.text_input(key='nueva_asunto').set_value('Transacción de prueba')
+        at.text_area(key='nueva_descripcion').set_value('Necesito preparar una transacción.')
+        at.checkbox(key='nueva_incompletos').check().run()
+        at.button(key='nueva_enviar').click().run()
+        self.assertTrue(any('Adjunta al menos' in x.value for x in at.error))
+        self.assertEqual(len(at.exception), 0)
+
+    def test_envia_transaccion_con_datos_y_reinicia_formulario(self):
+        from config import TIPO_TRANSACCION
+        at = self.app(self.sup, 'Nueva solicitud')
+        at.selectbox(key='nueva_tipo').select(TIPO_TRANSACCION).run()
+        for clave, valor in {'nueva_asunto':'Preparar transacción', 'nueva_documento':'34567890','nueva_nombre':'Cliente ficticio','nueva_expediente':'123-2026','nueva_juzgado':'Juzgado civil','nueva_materia':'Obligación de dar suma'}.items():
+            at.text_input(key=clave).set_value(valor)
+        at.text_area(key='nueva_descripcion').set_value('Solicito la revisión del expediente.')
+        at.button(key='nueva_enviar').click().run()
+        self.assertEqual(len(at.exception), 0)
+        self.assertTrue(any('registrada correctamente' in x.value for x in at.success))
+        self.assertEqual(at.text_input(key='nueva_asunto').value, '')
+        with db.conexion() as con:
+            self.assertEqual(con.execute("SELECT numero_expediente FROM tickets ORDER BY id DESC LIMIT 1").fetchone()[0], '123-2026')

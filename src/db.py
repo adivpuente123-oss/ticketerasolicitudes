@@ -60,6 +60,17 @@ CREATE TABLE IF NOT EXISTS historial (
 );
 CREATE INDEX IF NOT EXISTS ix_tickets_sup ON tickets(supervisor_id);
 CREATE INDEX IF NOT EXISTS ix_tickets_estado ON tickets(estado);
+CREATE TABLE IF NOT EXISTS adjuntos (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    ticket_id INTEGER NOT NULL REFERENCES tickets(id) ON DELETE CASCADE,
+    subido_por INTEGER REFERENCES usuarios(id) ON DELETE SET NULL,
+    nombre TEXT NOT NULL,
+    tipo_mime TEXT NOT NULL,
+    tamano INTEGER NOT NULL,
+    datos BLOB NOT NULL,
+    creado_en TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS ix_adjuntos_ticket ON adjuntos(ticket_id);
 CREATE TABLE IF NOT EXISTS mensajes (
     id INTEGER PRIMARY KEY, ticket_id INTEGER NOT NULL REFERENCES tickets(id),
     usuario_id INTEGER REFERENCES usuarios(id), cuerpo TEXT NOT NULL,
@@ -121,6 +132,11 @@ def conexion():
 def iniciar():
     with conexion() as con:
         con.executescript(ESQUEMA)
+        con.execute("BEGIN IMMEDIATE")
+        existentes = {r["name"] for r in con.execute("PRAGMA table_info(tickets)")}
+        for nombre, definicion in {"asunto": "TEXT NOT NULL DEFAULT ''", "nombre_cliente": "TEXT NOT NULL DEFAULT ''", "numero_expediente": "TEXT NOT NULL DEFAULT ''", "juzgado": "TEXT NOT NULL DEFAULT ''", "materia": "TEXT NOT NULL DEFAULT ''", "datos_incompletos": "INTEGER NOT NULL DEFAULT 0"}.items():
+            if nombre not in existentes:
+                con.execute(f"ALTER TABLE tickets ADD COLUMN {nombre} {definicion}")
 
 
 # ---------- contraseñas (solo librería estándar: PBKDF2-SHA256) ----------
@@ -232,15 +248,57 @@ def usuarios_df() -> pd.DataFrame:
                FROM usuarios u ORDER BY u.rol, u.nombre""", con)
 
 
+# ---------- documentos de solicitudes ----------
+
+def adjuntos_ticket(tid, uid):
+    with conexion() as con:
+        acceso = con.execute("SELECT 1 FROM tickets t JOIN usuarios u ON u.id=? WHERE t.id=? AND u.activo=1 AND (u.rol='backoffice' OR t.supervisor_id=u.id)", (uid, tid)).fetchone()
+        if not acceso:
+            raise PermissionError("No tienes acceso a estos documentos.")
+        return con.execute("SELECT id,nombre,tipo_mime,tamano,creado_en FROM adjuntos WHERE ticket_id=? ORDER BY id", (tid,)).fetchall()
+
+
+def obtener_adjunto(aid, uid):
+    with conexion() as con:
+        archivo = con.execute("SELECT a.* FROM adjuntos a JOIN tickets t ON t.id=a.ticket_id JOIN usuarios u ON u.id=? WHERE a.id=? AND u.activo=1 AND (u.rol='backoffice' OR t.supervisor_id=u.id)", (uid, aid)).fetchone()
+        if not archivo:
+            raise PermissionError("No tienes acceso a este documento.")
+        return archivo
+
+
+def actualizar_expediente(tid, actor_id, documento, nombre_cliente, numero_expediente, juzgado, materia):
+    import re
+    from config import TIPO_TRANSACCION
+    valores = {k: v.strip() for k, v in {"documento": documento, "nombre_cliente": nombre_cliente, "numero_expediente": numero_expediente, "juzgado": juzgado, "materia": materia}.items()}
+    if valores["documento"] and not re.fullmatch(r"\d{8}", valores["documento"]):
+        raise ValueError("El DNI debe tener 8 dígitos.")
+    if any(len(v) > 200 for v in valores.values()):
+        raise ValueError("Los campos del expediente deben tener hasta 200 caracteres.")
+    with conexion() as con:
+        con.execute("BEGIN IMMEDIATE")
+        actor = con.execute("SELECT 1 FROM usuarios WHERE id=? AND activo=1 AND rol='backoffice'", (actor_id,)).fetchone()
+        if not actor:
+            raise PermissionError("Solo el equipo de atención puede completar el expediente.")
+        t = con.execute("SELECT tipo_consulta FROM tickets WHERE id=?", (tid,)).fetchone()
+        if not t or t["tipo_consulta"] != TIPO_TRANSACCION:
+            raise ValueError("La solicitud no corresponde a una transacción extrajudicial.")
+        valores["datos_incompletos"] = int(not all(valores.values()))
+        con.execute("UPDATE tickets SET " + ', '.join(f"{k}=?" for k in valores) + ", actualizado_en=? WHERE id=?", [*valores.values(), ahora_iso(), tid])
+        con.execute("INSERT INTO historial(ticket_id,fecha,usuario_id,evento,detalle) VALUES(?,?,?,?,?)", (tid, ahora_iso(), actor_id, "Expediente actualizado", "Datos del expediente revisados por el equipo de atención"))
+        _crear_notificaciones(con, tid, "estado", "Datos del expediente actualizados", actor_id)
+
+
 # ---------- tickets ----------
 _SELECT = """SELECT t.id, t.codigo, t.origen, t.cartera, t.tipo_consulta, t.documento, t.cuenta, t.descripcion, t.estado,
                     t.fecha_solicitud, t.fecha_envio, t.fecha_respuesta, t.conclusion, t.estado_corresponde,
-                    t.respuesta, t.sustento, t.supervisor_id, u.nombre AS supervisor
+                    t.respuesta, t.sustento, t.supervisor_id, u.nombre AS supervisor, t.asunto, t.nombre_cliente, t.numero_expediente, t.juzgado, t.materia, t.datos_incompletos
              FROM tickets t LEFT JOIN usuarios u ON u.id = t.supervisor_id"""
 
 
 def crear_ticket(supervisor_id, cartera, tipo_consulta, documento, cuenta, descripcion="", origen="web",
-                 fecha_solicitud=None, estado="Recibida", usuario_id=None, detalle="Ticket creado", **extra):
+                 fecha_solicitud=None, estado="Recibida", usuario_id=None, detalle="Ticket creado", adjuntos=None, **extra):
+    from archivos import validar_adjuntos
+    archivos = validar_adjuntos(adjuntos or [])
     campos = {"supervisor_id": supervisor_id, "cartera": cartera, "tipo_consulta": tipo_consulta, "documento": documento,
               "cuenta": cuenta, "descripcion": descripcion, "origen": origen,
               "fecha_solicitud": fecha_solicitud or hoy_iso(), "estado": estado, **extra}
@@ -251,6 +309,8 @@ def crear_ticket(supervisor_id, cartera, tipo_consulta, documento, cuenta, descr
         con.execute("UPDATE tickets SET codigo = ? WHERE id = ?", (codigo, tid))
         con.execute("INSERT INTO historial (ticket_id, fecha, usuario_id, evento, detalle) VALUES (?,?,?,?,?)",
                     (tid, ahora_iso(), usuario_id, "Creado", detalle))
+        for archivo in archivos:
+            con.execute("INSERT INTO adjuntos(ticket_id,subido_por,nombre,tipo_mime,tamano,datos) VALUES(?,?,?,?,?,?)", (tid, usuario_id or supervisor_id, archivo["nombre"], archivo["tipo_mime"], archivo["tamano"], sqlite3.Binary(archivo["datos"])))
         _crear_notificaciones(con, tid, "solicitud", "Nueva solicitud", usuario_id or supervisor_id)
         _notificar(con, tid, "Solicitud recibida", f"Tu solicitud {codigo} fue recibida. La revisaremos pronto.", avisar_equipo=True)
     return tid, codigo
@@ -411,3 +471,4 @@ def revocar_sesion(token):
     if token:
         with conexion() as con:
             con.execute("DELETE FROM sesiones WHERE huella=?", (hashlib.sha256(token.encode()).hexdigest(),))
+
