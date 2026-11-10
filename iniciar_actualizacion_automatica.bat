@@ -10,5 +10,6 @@ if not exist .venv\Scripts\python.exe (
   pause
   exit /b 1
 )
+echo Abre una sola vez http://localhost:8502 y conserva esa pestana.
 .venv\Scripts\python.exe src\actualizador.py
 pause

@@ -9,3 +9,5 @@ db/*.db-*
 !.env.example
 *.log
 .streamlit/secrets.toml
+
+actualizador-*.lock
