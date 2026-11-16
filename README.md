@@ -20,22 +20,21 @@ Abre http://localhost:8502. Crea el administrador con tu correo `adiv.puente@goe
 
 No hay usuarios ni contraseñas precargados. No se incluyen datos reales.
 
-## Publicar sin depender de tu PC
+## Publicar gratis sin depender de tu PC
 
-Se incluye [render.yaml](render.yaml) para Render: un servicio Python de pago, una instancia con 1 CPU/2 GB y un disco persistente de 1 GB. Preparar este archivo no contrata alojamiento ni genera una URL real. Revisa el precio del servicio y del disco en Render antes de confirmar su creación.
+El [render.yaml](render.yaml) prepara un servicio **Free** de Render, sin disco de pago. La base y los documentos se conservan en **Supabase**, fuera del disco temporal de Render. Lee la [guía completa de publicación y migración](docs/PUBLICAR_GRATIS.md) antes de crear el servicio.
 
-1. Crea tu cuenta en https://render.com y conecta GitHub autorizando este repositorio.
-2. Tras incorporar esta configuración a main, elige **New → Blueprint** y selecciona el repositorio. Revisa el servicio y el coste antes de aplicarlo.
-3. Render instalará las dependencias y ejecutará servidor.py. El portal quedará en la URL HTTPS que te asigne Render. La aplicación usa RENDER_EXTERNAL_URL automáticamente; para un dominio propio configúralo en Render y define PORTAL_URL con ese dominio.
-4. Para una instalación vacía, consulta SETUP_TOKEN en las variables del servicio de Render e introdúcelo en la pantalla de instalación para crear al administrador. No publiques ese código ni lo compartas en el chat.
-5. Para conservar tus usuarios y solicitudes actuales, migra primero una copia consistente de tu base local al archivo /var/data/plataforma.db del disco. Los archivos de tu PC no se trasladan por conectar GitHub. Esa copia contiene datos privados: no la subas al repositorio. Planifica la transferencia después de crear el servicio y antes de registrar actividad real. Detén las escrituras y coordina el reemplazo con el portal detenido; no sobrescribas una base SQLite en uso ni copies su archivo mientras cambia. Los hashes de contraseña existentes permiten conservar las contraseñas.
-6. Las actualizaciones se despliegan desde main cuando las comprobaciones de GitHub pasan. Mantén la misma URL y recarga la página después del despliegue. Render gestiona los procesos: no ejecutes los .bat ni el actualizador local en ese alojamiento. El disco conserva la base en los despliegues. No elimines el disco y conserva copias consistentes de SQLite.
+1. Incorpora los cambios a `main` y crea un proyecto Free en Supabase.
+2. Crea el bucket **privado** `expedientes`. Obtén la conexión PostgreSQL del pooler y las claves del servidor.
+3. En Render: **New → Blueprint**, conecta este repositorio y configura `DATABASE_URL`, `SUPABASE_URL` y `SUPABASE_SERVICE_ROLE_KEY` como secretos. Verifica que el plan seleccionado siga siendo Free y no añadas disco ni servicios de pago.
+4. Si tienes información local, detén su uso y ejecuta la migración indicada en la guía **antes de crear cuentas o solicitudes en la web**. GitHub no traslada tu base local.
+5. Verifica usuarios, solicitudes y descargas desde la URL HTTPS de Render; todos accederán a la misma base. Conserva el original y crea respaldos periódicos.
 
-El servicio empieza con el correo desactivado. Para recibir y preparar borradores con la PC apagada, TI debe autorizar Microsoft Graph según la sección Microsoft 365 para servidor. Guarda MS_TENANT_ID, MS_CLIENT_ID y MS_CLIENT_SECRET en las variables privadas de Render y activa CORREO_MODO=graph después de verificar los permisos y el flujo de respuesta al original. Incorpora también la corrección de borradores de respuesta antes de activar el correo. Outlook clásico en tu PC no sustituye esa conexión de servidor.
+`EXIGIR_DB_REMOTA=1` impide arrancar con una SQLite accidental en el disco temporal. Con `DATABASE_URL` se usa PostgreSQL; sin ella se conserva el modo SQLite local. En nube, los documentos nuevos se guardan en Storage privado y los permisos se comprueban en el servidor antes de descargarlos. No compartas la clave de servicio ni la pongas en el navegador.
 
-No ejecutes a la vez la copia local y la alojada contra el mismo buzón: cada una tendría su propia base y podría procesar el mismo correo. El servicio con disco persistente necesita una sola instancia; puede haber una breve interrupción al desplegar. Verifica el primer despliegue y la persistencia con datos ficticios antes de migrar el uso del equipo.
+**Límites:** Render Free puede suspender la web por inactividad y Supabase Free puede pausar proyectos inactivos; hay cuotas de base, almacenamiento y tráfico. Verifica las condiciones vigentes en ambos proveedores. No se garantiza disponibilidad continua ni correo 24/7. El correo empieza desactivado y requiere autorización de Microsoft 365; Outlook clásico no funciona con la PC apagada. No conectes simultáneamente la copia local y la publicada al mismo buzón.
 
-Referencias: [BluePrint de Render](https://render.com/docs/blueprint-spec), [discos persistentes](https://render.com/docs/disks) y [variables del entorno](https://render.com/docs/environment-variables).
+Los cambios se despliegan desde `main` cuando pasan las comprobaciones; se conserva la URL y los datos remotos. Las copias de seguridad son independientes del despliegue: no se configura un respaldo automático del proveedor.
 
 ## Publicar en Internet
 
@@ -118,7 +117,7 @@ El botón Nueva solicitud de la bandeja realiza una navegación completa al form
 
 El tipo Transacción Extrajudicial muestra DNI, nombre completo, número de expediente, juzgado y materia. Con todos los datos se registra sin exigir número de cuenta. Si falta información, el solicitante debe marcarlo y adjuntar al menos un documento del expediente; los datos conocidos se conservan y los demás quedan por completar. El equipo de atención puede completar o corregir esos campos desde Gestionar. Se recopila información para la elaboración del documento; no se extraen datos ni se genera un documento legal automáticamente.
 
-Se admiten hasta 5 archivos PDF, PNG o JPG, máximo 10 MB por archivo y 30 MB en total. Se comprueban extensión y firma del archivo. Los adjuntos se guardan de forma transaccional en la misma SQLite que el ticket, por lo que forman parte del disco persistente y sus copias. Ocupan espacio en ese disco. Si una validación falla no se crea un ticket parcial. Los datos anteriores se mantienen mediante una migración aditiva.
+Se admiten hasta 5 archivos PDF, PNG o JPG, máximo 10 MB por archivo y 30 MB en total. Se comprueban extensión y firma del archivo. En modo local, los adjuntos se guardan de forma transaccional en la misma SQLite que el ticket. Con PostgreSQL se guardan en Supabase Storage privado y su referencia en la base; la guía de nube incluye el respaldo conjunto y la limpieza de operaciones incompletas. Ocupan espacio en ese disco. Si una validación falla no se crea un ticket parcial. Los datos anteriores se mantienen mediante una migración aditiva.
 
 El detalle del ticket muestra los datos y documentos al supervisor propietario y al equipo de atención. Las descargas de producción pasan por una ruta autenticada que vuelve a comprobar permisos. Al borrar un ticket se eliminan sus adjuntos; al borrar un usuario conservando sus solicitudes se conservan los documentos para el equipo. Estos adjuntos son del formulario web: la importación de archivos recibidos por correo sigue sin estar implementada.
 
@@ -158,7 +157,7 @@ Gestión de solicitudes reúne buscador, filtro por estado, filtros adicionales 
 
 ## Sesión persistente y datos de usuarios
 
-Los usuarios, correos y hashes de contraseña se guardan en `db/plataforma.db` (o `RUTA_DB`). Ya persisten al recargar y reiniciar. Conserva esa carpeta al actualizar; Docker utiliza el volumen persistente `tickets`. La contraseña original no se almacena ni se puede consultar: se reemplaza por una nueva desde Usuarios.
+Los usuarios, correos y hashes de contraseña se guardan en PostgreSQL si existe `DATABASE_URL`; en modo local, en `db/plataforma.db` (o `RUTA_DB`). Ya persisten al recargar y reiniciar. Conserva esa carpeta al actualizar; Docker utiliza el volumen persistente `tickets`. La contraseña original no se almacena ni se puede consultar: se reemplaza por una nueva desde Usuarios.
 
 Inicia con `iniciar_plataforma.bat`, `iniciar_plataforma_red.bat` o `python servidor.py`. El servidor mantiene una cookie HttpOnly, SameSite=Lax, durante 12 horas y guarda solo la huella del token en la base de datos. Recargar, cerrar y abrir el navegador o reiniciar el portal conserva el acceso durante ese plazo. Cerrar sesión revoca el token. Cambiar correo, contraseña, rol o desactivar un usuario revoca sus sesiones. Eliminarlo también elimina sus sesiones.
 
