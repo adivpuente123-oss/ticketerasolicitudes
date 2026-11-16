@@ -9,6 +9,7 @@ from urllib.parse import quote
 
 from aiohttp import ClientSession, WSMsgType, web
 import db
+from almacenamiento import ErrorAlmacenamiento
 
 COOKIE = "portal_session"
 CSRF = "portal_login_csrf"
@@ -73,9 +74,11 @@ async def descargar_adjunto(request):
     if not usuario:
         raise web.HTTPUnauthorized(text="Inicia sesión para descargar el documento.")
     try:
-        archivo = db.obtener_adjunto(int(request.match_info["id"]), usuario["id"])
+        archivo = await asyncio.to_thread(db.obtener_adjunto, int(request.match_info["id"]), usuario["id"])
     except (PermissionError, ValueError):
         raise web.HTTPNotFound(text="Documento no disponible.")
+    except ErrorAlmacenamiento:
+        raise web.HTTPServiceUnavailable(text="No se pudo recuperar el documento. Inténtalo nuevamente.")
     return web.Response(body=archivo["datos"], content_type=archivo["tipo_mime"], headers={
         "Content-Disposition": "attachment; filename*=UTF-8''" + quote(archivo["nombre"], safe=""),
         "Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff"})

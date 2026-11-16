@@ -14,6 +14,7 @@ import streamlit as st
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 import db
+from almacenamiento import ErrorAlmacenamiento
 from correo import crear_ticket_desde_correo
 from solicitudes import registrar_solicitud, SolicitudDuplicada
 from config import CARTERAS, CONCLUSIONES, CORRESPONDE, ESTADOS_TICKET, TIPOS_CONSULTA, DIAS_ALERTA_PENDIENTE, TIPO_TRANSACCION, PRIORIDADES
@@ -239,7 +240,7 @@ def confirmar_borrado_solicitud(tid):
             st.session_state.pop("ticket_sel", None)
             st.session_state.pop("borrar_ticket", None)
             st.rerun(scope="app")
-        except (ValueError, PermissionError) as exc:
+        except (ValueError, PermissionError, ErrorAlmacenamiento) as exc:
             st.error(str(exc))
     if no.button("Cancelar"):
         st.session_state.pop("borrar_ticket", None)
@@ -505,7 +506,7 @@ def pagina_nueva(u):
                 st.rerun(scope="app")
             except SolicitudDuplicada as exc:
                 st.warning(str(exc))
-            except (ValueError, PermissionError) as exc:
+            except (ValueError, PermissionError, ErrorAlmacenamiento) as exc:
                 st.error(str(exc))
             except sqlite3.Error:
                 st.error("No se pudo guardar la solicitud. Revisa el almacenamiento y vuelve a intentar; no se registró una solicitud parcial.")
@@ -543,7 +544,7 @@ def documentos_solicitud(u, tid, mostrar_asunto=True):
                             db.actualizar_expediente(tid, u["id"], dni, nombre, expediente, juzgado, materia)
                             st.toast("Datos del expediente guardados")
                             st.rerun(scope="app")
-                        except (ValueError, PermissionError) as exc:
+                        except (ValueError, PermissionError, ErrorAlmacenamiento) as exc:
                             st.error(str(exc))
     try:
         adjuntos = db.adjuntos_ticket(tid, u["id"])
@@ -630,7 +631,7 @@ def pagina_gestionar(u):
                         db.actualizar_propiedades(tid, u["id"], estado, prioridad, asignado, cartera, tipo)
                         st.toast("Propiedades guardadas")
                         st.rerun(scope="app")
-                    except (ValueError, PermissionError) as exc:
+                    except (ValueError, PermissionError, ErrorAlmacenamiento) as exc:
                         st.error(str(exc))
         with st.container(key="gestion_solicitante"):
             solicitante = db.usuario_por_id(t["supervisor_id"]) if t["supervisor_id"] else None
@@ -680,7 +681,7 @@ def pagina_gestionar(u):
                                 db.actualizar_ticket(tid, u["id"], cambios, evento, detalle, requerir_backoffice=True)
                                 st.toast("Resultado guardado · aviso en cola para revisión")
                                 st.rerun(scope="app")
-                            except (ValueError, PermissionError) as exc:
+                            except (ValueError, PermissionError, ErrorAlmacenamiento) as exc:
                                 st.error(str(exc))
 
 def acceso_vigente(u):
@@ -734,7 +735,7 @@ def conversacion(u, tid):
                         db.agregar_mensaje(tid, u["id"], texto, adjuntos=[{"nombre": a.name, "datos": a.getvalue()} for a in adjuntos])
                         st.session_state[f"conv_version_{tid}"] = version + 1
                         st.rerun(scope="app")
-                    except (ValueError, PermissionError) as exc:
+                    except (ValueError, PermissionError, ErrorAlmacenamiento) as exc:
                         st.error(str(exc))
         if u["rol"] == "backoffice":
             with pestañas[1]:
@@ -747,7 +748,7 @@ def conversacion(u, tid):
                         try:
                             db.agregar_nota_interna(tid, u["id"], nota)
                             st.rerun(scope="app")
-                        except (ValueError, PermissionError) as exc:
+                        except (ValueError, PermissionError, ErrorAlmacenamiento) as exc:
                             st.error(str(exc))
 
 
@@ -758,7 +759,7 @@ def pagina_buzon(u):
     titulo_pagina("Correo de atención", "adiv.puente@goexpertis.com · Microsoft 365 / Outlook")
     with db.conexion() as con:
         servicio = con.execute("SELECT * FROM servicio WHERE nombre='outlook'").fetchone()
-        cola = pd.read_sql_query("SELECT id,ticket_id,destinatario,asunto,estado,error,creado_en FROM correo_salida ORDER BY id DESC LIMIT 100", con)
+        cola = db.leer_df("SELECT id,ticket_id,destinatario,asunto,estado,error,creado_en FROM correo_salida ORDER BY id DESC LIMIT 100", con)
     if servicio:
         st.info(f"Última revisión: {servicio['actualizado_en']} · {servicio['detalle']}")
     else:
@@ -884,7 +885,7 @@ def pagina_usuarios(u):
                             db.eliminar_usuario(int(fila["id"]), u["id"], borrar_solicitudes=borrar.startswith("Sí"))
                             st.toast("Usuario eliminado")
                             st.rerun()
-                        except (ValueError, PermissionError) as exc:
+                        except (ValueError, PermissionError, ErrorAlmacenamiento) as exc:
                             st.error(str(exc))
 
 

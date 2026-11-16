@@ -1,24 +1,28 @@
-# Crea un servicio de pago con disco persistente. Revisa el coste en Render antes de aplicarlo.
+# Plan gratuito: los datos viven en Supabase, nunca en el disco temporal de Render.
 services:
   - type: web
     name: ticketerasolicitudes
     runtime: python
-    plan: 1c-2g
+    plan: free
     numInstances: 1
     branch: main
     autoDeployTrigger: checksPass
     buildCommand: pip install -r requirements.txt
     startCommand: python servidor.py
     healthCheckPath: /_stcore/health
-    disk:
-      name: datos-ticketera
-      mountPath: /var/data
-      sizeGB: 1
     envVars:
       - key: PYTHON_VERSION
         value: 3.12.12
-      - key: RUTA_DB
-        value: /var/data/plataforma.db
+      - key: DATABASE_URL
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: SUPABASE_STORAGE_BUCKET
+        value: expedientes
+      - key: EXIGIR_DB_REMOTA
+        value: "1"
       - key: PORTAL_CLOUD
         value: "1"
       - key: SETUP_TOKEN

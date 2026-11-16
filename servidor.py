@@ -60,6 +60,9 @@ async def main():
     if os.getenv("PORTAL_CLOUD") == "1" and len(os.getenv("SETUP_TOKEN", "")) < 24:
         raise SystemExit("Configura SETUP_TOKEN con al menos 24 caracteres aleatorios en el alojamiento.")
     db.iniciar()
+    if db.es_postgres():
+        from almacenamiento import comprobar
+        await asyncio.to_thread(comprobar)
     puerto = int(os.getenv("PORT", "8502"))
     interno = int(os.getenv("PORT_INTERNO", str(puerto + 1)))
     if interno == puerto:
@@ -77,7 +80,14 @@ async def main():
         direccion = "0.0.0.0" if os.getenv("PORTAL_CLOUD") == "1" or os.getenv("PORTAL_RED") == "1" else "127.0.0.1"
         await web.TCPSite(runner, direccion, puerto).start()
         print(f"Portal disponible: {url_publica(puerto)} — utiliza siempre esta misma direccion.", flush=True)
+        ultima_limpieza = 0
         while portal.poll() is None:
+            if db.es_postgres() and asyncio.get_running_loop().time() - ultima_limpieza > 60:
+                try:
+                    await asyncio.to_thread(db.limpiar_objetos)
+                except Exception:
+                    print("Limpieza de documentos pendiente; se reintentará automáticamente.", flush=True)
+                ultima_limpieza = asyncio.get_running_loop().time()
             if os.getenv("CORREO_MODO") == "graph" and (correo is None or correo.poll() is not None):
                 correo = subprocess.Popen([sys.executable, "src/servicio_graph.py"], cwd=RAIZ)
             await asyncio.sleep(1)
